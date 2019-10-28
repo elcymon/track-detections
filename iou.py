@@ -13,7 +13,7 @@ def computeCenterShiftXY(boxA,boxB):
     centreB = getCentre(boxB)
     return (round(centreB[0] - centreA[0],2), round(centreB[1] - centreA[1]),2)
 
-def evaluatIOUs(gts,dects,IOUThreshold=0.001):
+def evaluatIOUs(gts,dects,trackType='iou',IOUThreshold=sys.float_info.min):
     #each gts element is [(x1,y1,x2,y2),id,delx,dely,info,interDur]
     # delx,dely are gradient in x,y direction, which is None initially
     # info could be new, iou or inter.
@@ -36,22 +36,25 @@ def evaluatIOUs(gts,dects,IOUThreshold=0.001):
                 jMax = j
         
         #if overlap is above threshold, it is tracked, else, this is a new box
-        if iouMax >= IOUThreshold:
+        if iouMax >= IOUThreshold and jMax is not None:
             detectionData[1] = gts[jMax][1]
             gradientXY = computeCenterShiftXY(gts[jMax][0],detectionData[0])
             detectionData[2] = gradientXY[0]
             detectionData[3] = gradientXY[1]
-            detectionData[4] = 'iou' # iou tracked box
+            detectionData[4] = trackType # iou tracked box
             trackedBox.append(detectionData)
             if len(gts) > 0:
                 del gts[jMax]
         else:
             detectionData[4]  = 'new'
             newBox.append(detectionData)
-    for b in gts:
-        if b[4] == 'inter':
-            b[5] += 1
-        missingBox.append(b)
+    if trackType == 'iou':
+        for b in gts:
+            if b[4] == 'inter':
+                b[5] += 1
+            missingBox.append(b)
+    else:
+        missingBox = gts
     return trackedBox,missingBox,newBox
 
 def computeIOU(boxA, boxB):
