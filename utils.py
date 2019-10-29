@@ -2,6 +2,24 @@
 from math import sqrt 
 import numpy as np
 
+class BoxData:
+    def __init__(self,x1,y1,x2,y2,detID,delx,dely,info,interDur):
+        self.x1 = x1
+        self.y1 = y1
+        self.x2 = x2
+        self.y2 = y2
+        self.detID = detID
+        self.delx = delx
+        self.dely = dely
+        self.info = info
+        self.interDur = interDur
+    def getBound(self):
+        return self.x1,self.x2,self.y1,self.y2
+    
+    def getAllBoxData(self):
+        return self.x1,self.x2,self.y1,self.y2,self.detID,\
+            self.delx,self.dely,self.info,self.interDur
+
 # Function to find the circle on 
 # which the given three points lie 
 def findCircle(x1, y1, x2, y2, x3, y3) :

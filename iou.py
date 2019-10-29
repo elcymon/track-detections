@@ -4,6 +4,7 @@ from collections import Counter
 import numpy as np
 import pandas as pd
 from copy import deepcopy
+import utils
 
 def getCentre(box):
     return ((box[0] + box[2]) / 2.0,(box[1] + box[3]) / 2.0)
@@ -30,6 +31,8 @@ def evaluatIOUs(gts,dects,trackType='iou',IOUThreshold=sys.float_info.min):
         
         #find maximum overlap of this box with gts data
         for j in range(len(gts)):
+            # print(gts)
+            # print(detectionData)
             iou = computeIOU(detectionData[0], gts[j][0])
             if iou > iouMax:
                 iouMax = iou

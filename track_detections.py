@@ -10,7 +10,8 @@ class TrackDetections:
     def __init__(self,videoName,framesTxt,direction,\
                     horizonPoints = [18,162,494,59,937,143], #[162,18,59,494,143,937],
                     opticFlow=False,txtType='GT',resultVideo = None):
-        
+        self.boxData = ['x1','y1','x2','y2','id','delx','dely','info','interDur']
+
         self.opticFlow = opticFlow
         self.scale = 0.5
 
@@ -19,6 +20,8 @@ class TrackDetections:
         else:
             self.txtHeaders = ['class','confidence','x1','y1','x2','y2']
         
+        self.litterID = 0 # id to be used by next litter
+
         #frame dimension
         self.xMax = 960
         self.yMax = 540
@@ -31,6 +34,11 @@ class TrackDetections:
         self.video = cv.VideoCapture(self.videoName)
         self.fps = self.video.get(cv.CAP_PROP_FPS)
         self.totalFrames = self.video.get(cv.CAP_PROP_FRAME_COUNT) - 1 # 0 based indexing
+        
+        self.framesNumbers = np.linspace(0,self.totalFrames,self.totalFrames + 1,dtype=np.int)
+        if self.direction == 'reverse':
+            self.framesNumbers = np.flip(self.framesNumbers)
+
         self.trackerDF = pd.DataFrame()
         if horizonPoints is not None:
             self.horizon = utils.findCircle(*horizonPoints)
@@ -60,11 +68,14 @@ class TrackDetections:
         return frame
 
     def allocateIDs(self,newBoxes):
-        litterID = len(self.trackerDF.columns)
+
+        
+        
         for i in range(len(newBoxes)):
-            newBoxes[i][1] = 'L{}'.format(litterID)
+            newBoxes[i][1] = 'L{}'.format(self.litterID)
+            # print(litterID)
             
-            litterID += 1
+            self.litterID += 1
         return newBoxes
     
     def enforceBounds(self,data,maxValue):
@@ -124,9 +135,24 @@ class TrackDetections:
         return missingBoxes
     
     def updateTrackerDF(self,frameNo,allBoxes):
+        currDetections = []
         for data in allBoxes:
             if data is not None:
-                self.trackerDF.loc[frameNo + 1,data[1]] = str(data)
+                boxID = data[1]
+                dataHeader = pd.MultiIndex.from_product([boxID,self.boxData],names=['boxID','boxData'])
+                # print(dataHeader)
+                if len(self.trackerDF.columns) == 0:
+                    self.trackerDF = pd.DataFrame(columns=dataHeader)
+                    # self.trackerDF.columns.names
+                else:
+                    # print(self.trackerDF.columns.union(dataHeader))
+                    self.trackerDF = self.trackerDF.reindex(columns=self.trackerDF.columns.union(dataHeader))
+                # print(self.trackerDF)
+                self.trackerDF.loc[frameNo + 1, dataHeader] = list(data[0]) + data[1:]
+                # for col,value in zip(dataHeader,data[0] + data[1:]):
+                #     self.trackerDF.loc[frameNo + 1,tuple(col)] = value
+                currDetections.append(data)
+        return currDetections
     
     
     def drawTrackerDF(self,trackerRow,frame):
@@ -192,25 +218,73 @@ class TrackDetections:
             # print(b,self.ellipse_mask[int(xc),int(yc)])
         
         return filtered_points
+    def pruneTrackerDF(self):
+        pruneColumns = []
+        for boxID in self.trackerDF.columns.get_level_values(0).unique():
+            # print(boxID)
+            infoColumn = self.trackerDF.loc[:,(boxID,'info')]
+            iouCount = len(infoColumn[infoColumn == 'iou'])
+            interpolationCount = len(infoColumn[infoColumn == 'inter'])
+            # print(boxID,iouCount,interpolationCount)
 
+            if iouCount == 0:
+                pruneColumns.append(boxID)
+            elif interpolationCount / float(interpolationCount + iouCount) > 0.7:
+                #if proportion of interpolationCount is more than 70%
+                pruneColumns.append(boxID)
+        if len(pruneColumns) > 0:
+            print("dropping ",pruneColumns)
+            self.trackerDF.drop(labels=pruneColumns, axis=1, inplace = True)
+    def getBoxesFromTrackerDF(self,frameNo):
+        boundBoxes = []
+        if frameNo in self.trackerDF.index:
+            for boxID in self.trackerDF.columns.get_level_values(0).unique():
+                boxData = self.trackerDF.loc[frameNo,boxID]
+                if boxData.isnull().sum() > 2:
+                    continue
+                boxBound = [(int(boxData.x1),int(boxData.y1),int(boxData.x2),int(boxData.y2)),\
+                                boxData.id,boxData.delx,boxData.dely,\
+                                boxData.info,boxData.interDur]
+                
+                boundBoxes.append(boxBound)
+        if len(boundBoxes) == 0:
+            boundBoxes = None
+        return boundBoxes
+            
+    def visualizeTrackerDF(self,csvFileName = None):
+        if csvFileName is not None:
+            self.trackerDF = pd.read_csv(csvFileName,header=[0,1],index_col=0,low_memory=False)
+            print(self.trackerDF.shape)
+
+        self.video = cv.VideoCapture(self.videoName)
+        for frameNo in self.framesNumbers:
+            print(frameNo)
+            status, frame = self.readFrame(self.totalFrames,frameNo)
+            if status:
+                frame = cv.resize(frame,None,
+                fx=self.scale,fy=self.scale,
+                interpolation=cv.INTER_LANCZOS4)
+                
+                littersDF = self.getBoxesFromTrackerDF(frameNo + 1) 
+                if littersDF is not None:
+                    frame = self.drawTrackerDF(littersDF, frame)
+                cv.imshow("TrackerDF",frame)
+                key = cv.waitKey(1) & 0xFF
+                if key == ord('q') or key == ord('Q'):
+                    break
     def processFrame(self):
-        framesNumbers = np.linspace(0,self.totalFrames,self.totalFrames + 1,dtype=np.int)
-        if self.direction == 'reverse':
-            framesNumbers = np.flip(framesNumbers)
+        
         prevlittersDF = []
         prevFrameGray = None
 
-        for frameNo in framesNumbers:
+        for frameNo in self.framesNumbers:
             littersDF = pd.read_csv(self.framesTxtPattern.format(frameNo + 1),
                                     sep=' ',names=self.txtHeaders)
             # print(status,frameNo)
             trackedBoxes,missingBoxes,newBoxes =\
                 iou.evaluatIOUs(prevlittersDF,littersDF.loc[:,'x1':'y2'].values,IOUThreshold=sys.float_info.min)
             
-            # assign new IDs for newBoxes
-            newBoxes = self.allocateIDs(newBoxes)
-
-            # interpolate missingBoxes
+            
             status,frame = self.readFrame(self.totalFrames,frameNo)
             frameGray = None
 
@@ -237,6 +311,10 @@ class TrackDetections:
                 
                 frameGray = cv.cvtColor(frame,cv.COLOR_BGR2GRAY)
                 
+            # assign new IDs for newBoxes
+            newBoxes = self.allocateIDs(newBoxes)
+            
+            # interpolate missingBoxes
             interpolatedMissingBoxes = self.interpolateNewPosition(missingBoxes,frameGray,prevFrameGray)
             # if self.opticFlow:
             #     dects = [b[0] for b in newBoxes]
@@ -250,22 +328,24 @@ class TrackDetections:
             prevFrameGray = frameGray
             
             # insert all into the tracker dataframe
-            self.updateTrackerDF(frameNo,trackedBoxes + newBoxes + interpolatedMissingBoxes)
+            prevlittersDF = \
+                        self.updateTrackerDF(frameNo,\
+                                    trackedBoxes + newBoxes + interpolatedMissingBoxes)
             # if frameNo == 166:
             #     print(self.trackerDF.loc[frameNo + 1, :].values)
-            prevlittersDF = []
+            # prevlittersDF = []
             
-            if frameNo + 1 in self.trackerDF.index:
-                for i in self.trackerDF.loc[frameNo + 1, :]:#trackedBoxes + newBoxes + interpolatedMissingBoxes
-                    if i is not None:
-                        try:
-                            prevlittersDF.append(eval(i))
-                        except TypeError:
-                            # print('TypeError: {}'.format(i))
-                            pass
-                            # print(i)           
-                    else:
-                        print("i is None: {}".format(i))
+            # if frameNo + 1 in self.trackerDF.index:
+            #     for i in self.trackerDF.loc[frameNo + 1, :]:#trackedBoxes + newBoxes + interpolatedMissingBoxes
+            #         if i is not None:
+            #             try:
+            #                 prevlittersDF.append(eval(i))
+            #             except TypeError:
+            #                 # print('TypeError: {}'.format(i))
+            #                 pass
+            #                 # print(i)           
+            #         else:
+            #             print("i is None: {}".format(i))
 
             # print(self.trackerDF)
             print(frameNo + 1, len(trackedBoxes), len(newBoxes),len(interpolatedMissingBoxes))
@@ -280,8 +360,8 @@ class TrackDetections:
                 
                 
                 
-                # if self.ellipse_mask is not None:
-                #     frame = self.apply_horizon_image_filter(frame,self.ellipse_mask)
+                if self.ellipse_mask is not None:
+                    frame = self.apply_horizon_image_filter(frame,self.ellipse_mask)
 
                 frame = self.drawBoxes(littersDF.loc[:,'x1':'y2'],frame)
                 frame = self.drawTrackerDF(prevlittersDF,frame)
@@ -312,13 +392,29 @@ if __name__ == '__main__':
                                 framesTxt = framesTxt,
                                 direction = direction, horizonPoints = horizonPoints,
                                 opticFlow = opticFlow, txtType = txtType)
-    trackDetections.processFrame()
-    print('last litter: %s' % trackDetections.trackerDF.columns[-1])
-    # trackerDFTxt = framesTxt[::-1].replace('/','trackerDF-',1)[::-1]
-    # print('saving to: %s' % trackerDFTxt)
     if resultVideo is None:
-        dfName = framesTxt + '.csv'
+            dfName = framesTxt 
     else:
-        dfName = framesTxt + '-' + resultVideo + '.csv'
-    
-    trackDetections.trackerDF.to_csv(dfName)
+        dfName = framesTxt + '-' + resultVideo 
+
+    trackDetections.visualizeTrackerDF(dfName + '-pruned.csv')
+    if False:
+        trackDetections.processFrame()
+        
+        # print(trackDetections.trackerDF.columns)
+        boxIDsList = trackDetections.trackerDF.columns.get_level_values(0).unique()
+        # print(boxIDsList)
+        print('total litter {}, last litter: {}'.format(len(boxIDsList),boxIDsList[-1]))
+        trackDetections.trackerDF.to_csv(dfName + '.csv')
+
+        print('pruning')
+        trackDetections.pruneTrackerDF()
+        boxIDsList = trackDetections.trackerDF.columns.get_level_values(0).unique()
+        print('total litter {}, last litter: {}'.format(len(boxIDsList),boxIDsList[-1]))
+        
+        # trackerDFTxt = framesTxt[::-1].replace('/','trackerDF-',1)[::-1]
+        # print('saving to: %s' % trackerDFTxt)
+        
+        
+        trackDetections.trackerDF.to_csv(dfName + '-pruned.csv')
+
