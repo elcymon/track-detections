@@ -90,9 +90,9 @@ class TrackDetections:
                                          0.5, 3, 15, 3, 5, 1.2, 0)
         else:
             flow = None
-
-        for i in range(len(missingBoxes)):
-            oldx1,oldy1,oldx2,oldy2 = missingBoxes[i][0]
+        interpolationResult = []
+        for i in missingBoxes:
+            oldx1,oldy1,oldx2,oldy2 = i[0]
             if self.opticFlow or flow is None:
                 # print(oldx1,oldy1,oldx2,oldy2)
                 oldx1,oldx2 = self.enforceBounds([oldx1,oldx2],self.xMax)
@@ -122,17 +122,14 @@ class TrackDetections:
             # newBox = tuple([np.min([newx1,newx2]),np.min([newy1,newy2]),\
             #                 np.max([newx1,newx2]),np.max([newy1,newy2])])
             # print(flowx1,flowy1,flowx2,flowy2,newBox)
-            if newBox[0] >= self.xMax or newBox[1] >= self.yMax\
-                or newBox[2] <= 0 or newBox[3] <= 0 or missingBoxes[i][5] > self.missingBoxThreshold:
-                #out of maximum frame
-                missingBoxes[i] = None
-
-            else:#still within frame
-                missingBoxes[i][0] = newBox
-                missingBoxes[i][2] = round(delx,1)
-                missingBoxes[i][3] = round(dely,1)
-                missingBoxes[i][4] = 'inter'
-        return missingBoxes
+            if not (newBox[0] >= self.xMax or newBox[1] >= self.yMax\
+                or newBox[2] <= 0 or newBox[3] <= 0 or i[5] > self.missingBoxThreshold):
+                i[0] = newBox
+                i[2] = round(delx,1)
+                i[3] = round(dely,1)
+                i[4] = 'inter'
+                interpolationResult.append(i)
+        return interpolationResult
     
     def updateTrackerDF(self,frameNo,allBoxes):
         currDetections = []
@@ -166,6 +163,8 @@ class TrackDetections:
                     color = (0,0,255)
                 elif boxType == 'new':
                     color = (255,0,255)
+                    frame = cv.putText(frame, boxID, (int(x2),int(y1)), \
+                                cv.FONT_HERSHEY_PLAIN, 1, (255,0,200), 2, cv.LINE_8, False)
                 else:
                     print('invalid boxType: ',boxType)
                 # print(box)
@@ -238,10 +237,15 @@ class TrackDetections:
     def getBoxesFromTrackerDF(self,frameNo):
         boundBoxes = []
         if frameNo in self.trackerDF.index:
-            for boxID in self.trackerDF.columns.get_level_values(0).unique():
-                boxData = self.trackerDF.loc[frameNo,boxID]
-                if boxData.isnull().sum() > 2:
-                    continue
+            #process frame data and drop na values/columns
+            boxesData = pd.DataFrame(self.trackerDF.loc[frameNo,:])
+            boxesData = boxesData.T.stack(dropna=False).unstack(0)
+            boxesData.columns = boxesData.columns.get_level_values(0)
+            boxesData = boxesData.dropna(axis=1,thresh=2).T
+            
+            for boxID,boxData in boxesData.iterrows():
+                
+                # print(boxData)
                 boxBound = [(int(boxData.x1),int(boxData.y1),int(boxData.x2),int(boxData.y2)),\
                                 boxData.id,boxData.delx,boxData.dely,\
                                 boxData.info,boxData.interDur]
@@ -262,13 +266,24 @@ class TrackDetections:
             status, frame = self.readFrame(self.totalFrames,frameNo)
             if status:
                 frame = cv.resize(frame,None,
-                fx=self.scale,fy=self.scale,
-                interpolation=cv.INTER_LANCZOS4)
+                    fx=self.scale,fy=self.scale,
+                    interpolation=cv.INTER_LANCZOS4)
+                
+                if self.ellipse_mask is None and self.horizon is not None:
+                    #create horizon mask
+                    _,self.ellipse_mask = self.create_ellipse_mask(self.horizon,frame)
+                if self.ellipse_mask is not None:
+                    frame = self.apply_horizon_image_filter(frame,self.ellipse_mask)
                 
                 littersDF = self.getBoxesFromTrackerDF(frameNo + 1) 
                 if littersDF is not None:
                     frame = self.drawTrackerDF(littersDF, frame)
+                
+
                 cv.imshow("TrackerDF",frame)
+                if self.vid_writer is not None:
+                    self.vid_writer.write(frame.astype(np.uint8))
+
                 key = cv.waitKey(1) & 0xFF
                 if key == ord('q') or key == ord('Q'):
                     break
@@ -311,11 +326,16 @@ class TrackDetections:
                 
                 frameGray = cv.cvtColor(frame,cv.COLOR_BGR2GRAY)
                 
-            # assign new IDs for newBoxes
-            newBoxes = self.allocateIDs(newBoxes)
             
             # interpolate missingBoxes
             interpolatedMissingBoxes = self.interpolateNewPosition(missingBoxes,frameGray,prevFrameGray)
+            if self.opticFlow:
+                trackedBoxes2,interpolatedMissingBoxes,newBoxes = \
+                    iou.evaluatIOUs(interpolatedMissingBoxes,newBoxes,trackType='iou+inter',IOUThreshold=0.001)
+                trackedBoxes = trackedBoxes + trackedBoxes2
+
+            # assign new IDs for newBoxes
+            newBoxes = self.allocateIDs(newBoxes)
             # if self.opticFlow:
             #     dects = [b[0] for b in newBoxes]
             #     print(len(interpolatedMissingBoxes),len(dects))
@@ -386,7 +406,7 @@ if __name__ == '__main__':
     horizonPoints = [18,162,494,59,937,143] # x1,y1, x2,y2, x3,y3
     opticFlow=True
     txtType='GT'
-    resultVideo = None # string for name of experiment/type
+    resultVideo = 'pruned'#None # string for name of experiment/type
 
     trackDetections = TrackDetections(videoName=videoName, resultVideo = resultVideo,
                                 framesTxt = framesTxt,
@@ -397,7 +417,7 @@ if __name__ == '__main__':
     else:
         dfName = framesTxt + '-' + resultVideo 
 
-    trackDetections.visualizeTrackerDF(dfName + '-pruned.csv')
+    trackDetections.visualizeTrackerDF(dfName + '.csv')
     if False:
         trackDetections.processFrame()
         

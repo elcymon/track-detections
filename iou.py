@@ -27,13 +27,19 @@ def evaluatIOUs(gts,dects,trackType='iou',IOUThreshold=sys.float_info.min):
         iouMax = sys.float_info.min
         jMax = None
         #transform to desired format
-        detectionData = [list(dects[d]),None,None,None,None,0]
+        if trackType == 'iou':
+
+            detectionData = [list(dects[d]),None,None,None,None,0]
+        else:
+            detectionData = dects[d]
         
         #find maximum overlap of this box with gts data
         for j in range(len(gts)):
             # print(gts)
             # print(detectionData)
             iou = computeIOU(detectionData[0], gts[j][0])
+            # if gts[j][1] == 'L102':
+            #     print(iou,detectionData[0], gts[j])
             if iou > iouMax:
                 iouMax = iou
                 jMax = j
@@ -44,7 +50,11 @@ def evaluatIOUs(gts,dects,trackType='iou',IOUThreshold=sys.float_info.min):
             gradientXY = computeCenterShiftXY(gts[jMax][0],detectionData[0])
             detectionData[2] = gradientXY[0]
             detectionData[3] = gradientXY[1]
-            detectionData[4] = trackType # iou tracked box
+            # tType = 'iou'
+            # if trackType == 'iou+inter':
+            #     tType = 'iou'
+
+            detectionData[4] = 'iou' # iou tracked box
             trackedBox.append(detectionData)
             if len(gts) > 0:
                 del gts[jMax]
@@ -58,6 +68,7 @@ def evaluatIOUs(gts,dects,trackType='iou',IOUThreshold=sys.float_info.min):
             missingBox.append(b)
     else:
         missingBox = gts
+    
     return trackedBox,missingBox,newBox
 
 def computeIOU(boxA, boxB):
@@ -69,6 +80,7 @@ def computeIOU(boxA, boxB):
     # intersection over union
     iou = interArea / union
     if iou < 0:
+        print(boxA,boxB,interArea,union,iou)
         return 0
     assert iou >= 0
     return iou
