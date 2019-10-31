@@ -152,14 +152,16 @@ class TrackDetections:
         return currDetections
     
     
-    def drawTrackerDF(self,trackerRow,frame):
+    def drawTrackerDF(self,trackerRow,frame,gtDF = False,detType=None):
         for data in trackerRow:
             if data is not None:
                 box,boxID,delx,dely,boxType,interDur = data
                 x1,y1,x2,y2 = box
-                if boxType == 'iou':
+                if gtDF:
+                    color = (150,50,100)
+                elif detType == 'TP' or boxType == 'iou':
                     color = (255,0,0)
-                elif boxType == 'inter':
+                elif detType == 'FP' or boxType == 'inter':
                     color = (0,0,255)
                 elif boxType == 'new':
                     color = (255,0,255)
@@ -254,20 +256,26 @@ class TrackDetections:
         if len(boundBoxes) == 0:
             boundBoxes = None
         return boundBoxes
-            
+    def readCSVTrackerDF(self,csvFileName):
+        return pd.read_csv(csvFileName,header=[0,1],index_col=0,low_memory=False)
+    def resize(self,frame):
+        return cv.resize(frame,None,fx=self.scale,fy=self.scale,interpolation=cv.INTER_LANCZOS4)
+    
     def visualizeTrackerDF(self,csvFileName = None):
         if csvFileName is not None:
-            self.trackerDF = pd.read_csv(csvFileName,header=[0,1],index_col=0,low_memory=False)
+            self.trackerDF = self.readCSVTrackerDF(csvFileName)
             print(self.trackerDF.shape)
 
         self.video = cv.VideoCapture(self.videoName)
+        if self.vid_writer is not None: #there is an instance of vid_writer already, record pruned trackerDF
+            self.vid_writer = cv.VideoWriter(self.videoName[:-4] + '-pruned.avi',
+                                    cv.CAP_FFMPEG, cv.VideoWriter_fourcc(*'X264'),
+                                    50,(self.xMax,self.yMax))
         for frameNo in self.framesNumbers:
             print(frameNo)
             status, frame = self.readFrame(self.totalFrames,frameNo)
             if status:
-                frame = cv.resize(frame,None,
-                    fx=self.scale,fy=self.scale,
-                    interpolation=cv.INTER_LANCZOS4)
+                frame = self.resize(frame)
                 
                 if self.ellipse_mask is None and self.horizon is not None:
                     #create horizon mask
@@ -406,7 +414,7 @@ if __name__ == '__main__':
     horizonPoints = [18,162,494,59,937,143] # x1,y1, x2,y2, x3,y3
     opticFlow=True
     txtType='GT'
-    resultVideo = 'pruned'#None # string for name of experiment/type
+    resultVideo = 'GT'#None # string for name of experiment/type
 
     trackDetections = TrackDetections(videoName=videoName, resultVideo = resultVideo,
                                 framesTxt = framesTxt,
@@ -417,24 +425,25 @@ if __name__ == '__main__':
     else:
         dfName = framesTxt + '-' + resultVideo 
 
-    trackDetections.visualizeTrackerDF(dfName + '.csv')
-    if False:
-        trackDetections.processFrame()
-        
-        # print(trackDetections.trackerDF.columns)
-        boxIDsList = trackDetections.trackerDF.columns.get_level_values(0).unique()
-        # print(boxIDsList)
-        print('total litter {}, last litter: {}'.format(len(boxIDsList),boxIDsList[-1]))
-        trackDetections.trackerDF.to_csv(dfName + '.csv')
+    
+    trackDetections.processFrame()
+    
+    # print(trackDetections.trackerDF.columns)
+    boxIDsList = trackDetections.trackerDF.columns.get_level_values(0).unique()
+    # print(boxIDsList)
+    print('total litter {}, last litter: {}'.format(len(boxIDsList),boxIDsList[-1]))
+    trackDetections.trackerDF.to_csv(dfName + '-unpruned.csv')
 
-        print('pruning')
-        trackDetections.pruneTrackerDF()
-        boxIDsList = trackDetections.trackerDF.columns.get_level_values(0).unique()
-        print('total litter {}, last litter: {}'.format(len(boxIDsList),boxIDsList[-1]))
-        
-        # trackerDFTxt = framesTxt[::-1].replace('/','trackerDF-',1)[::-1]
-        # print('saving to: %s' % trackerDFTxt)
-        
-        
-        trackDetections.trackerDF.to_csv(dfName + '-pruned.csv')
+    print('pruning')
+    trackDetections.pruneTrackerDF()
+    boxIDsList = trackDetections.trackerDF.columns.get_level_values(0).unique()
+    print('total litter {}, last litter: {}'.format(len(boxIDsList),boxIDsList[-1]))
+    
+    # trackerDFTxt = framesTxt[::-1].replace('/','trackerDF-',1)[::-1]
+    # print('saving to: %s' % trackerDFTxt)
+    
+    
+    trackDetections.trackerDF.to_csv(dfName + '-pruned.csv')
+
+    trackDetections.visualizeTrackerDF(dfName + '-pruned.csv')
 
