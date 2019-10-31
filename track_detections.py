@@ -90,9 +90,9 @@ class TrackDetections:
                                          0.5, 3, 15, 3, 5, 1.2, 0)
         else:
             flow = None
-        interpolationResult = []
-        for i in missingBoxes:
-            oldx1,oldy1,oldx2,oldy2 = i[0]
+            
+        for i in missingBoxes.index:
+            oldx1,oldy1,oldx2,oldy2 = missingBoxes.loc[i,'x1':'y2']
             if self.opticFlow or flow is None:
                 # print(oldx1,oldy1,oldx2,oldy2)
                 oldx1,oldx2 = self.enforceBounds([oldx1,oldx2],self.xMax)
@@ -102,8 +102,8 @@ class TrackDetections:
                 flowx1,flowy1 = flow[oldy1,oldx1]
                 flowx2,flowy2 = flow[oldy2,oldx2]
                 
-                delx = (flowx1 + flowx2) / 2.0
-                dely = (flowy1 + flowy2) / 2.0
+                delx = round((flowx1 + flowx2) / 2.0,1)
+                dely = round((flowy1 + flowy2) / 2.0,1)
                 
                 # newBox = (oldx1+delx,oldy1+dely,\
                 #             oldx2+delx,oldy2+dely)
@@ -111,11 +111,11 @@ class TrackDetections:
                 newBox = (oldx1+flowx1,oldy1+flowy1,\
                             oldx2+flowx2,oldy2+flowy2)
                 # print(newBox)
-                newBox = tuple(int(round(i)) for i in newBox)
+                newBox = [int(round(i)) for i in newBox]
             else:
                 delx = 0
                 dely = 0
-                newBox = (oldx1,oldy1,oldx2,oldy2)
+                newBox = [oldx1,oldy1,oldx2,oldy2]
 
             #rearrange points
             # newx1,newy1,newx2,newy2 = newBox
@@ -123,13 +123,10 @@ class TrackDetections:
             #                 np.max([newx1,newx2]),np.max([newy1,newy2])])
             # print(flowx1,flowy1,flowx2,flowy2,newBox)
             if not (newBox[0] >= self.xMax or newBox[1] >= self.yMax\
-                or newBox[2] <= 0 or newBox[3] <= 0 or i[5] > self.missingBoxThreshold):
-                i[0] = newBox
-                i[2] = round(delx,1)
-                i[3] = round(dely,1)
-                i[4] = 'inter'
-                interpolationResult.append(i)
-        return interpolationResult
+                or newBox[2] <= 0 or newBox[3] <= 0 or missingBoxes.loc[i,'interDur'] > self.missingBoxThreshold):
+                missingBoxes.loc[i,'x1':'info'] = newBox + [delx,dely,'inter']
+        
+        return missingBoxes
     
     def updateTrackerDF(self,frameNo,allBoxes):
         currDetections = []
@@ -203,20 +200,15 @@ class TrackDetections:
         return horizon_ellipse
 
     def apply_horizon_points_filter(self,boxes):
-        filtered_points = []
-        for b in boxes:
-            x1,y1,x2,y2 = b[0]
-            #invert x and y to that of opencv shape/format
-            yc,xc = round((x1 + x2) / 2), round((y1 + y2) / 2)
-            yc = self.enforceBounds([yc],self.xMax)[0]
-            xc = self.enforceBounds([xc],self.yMax)[0]
-            
-            
-            if self.ellipse_mask[int(xc),int(yc)] > 0:
-                filtered_points.append(b)
-            # print(b,self.ellipse_mask[int(xc),int(yc)])
+        boxes.loc[:,'xc'] = np.rint((boxes.loc[:,'x1'] + boxes.loc[:,'x2'])/2.0)
+        boxes.loc[:,'yc'] = np.rint((boxes.loc[:,'y1'] + boxes.loc[:,'y2'])/2.0)
+
+        boxes.loc[boxes['xc'] >= self.xMax,'xc'] = np.rint(self.xMax - 1)
+        boxes.loc[boxes['yc'] >= self.yMax,'yc'] = np.rint(self.yMax - 1)
+        filtered_points = boxes.loc[boxes.apply(lambda row: self.ellipse_mask[int(row['yc']),int(row['xc'])] > 0, axis = 0),:]
         
         return filtered_points
+
     def pruneTrackerDF(self):
         pruneColumns = []
         for boxID in self.trackerDF.columns.get_level_values(0).unique():
@@ -296,8 +288,10 @@ class TrackDetections:
             littersDF = pd.read_csv(self.framesTxtPattern.format(frameNo + 1),
                                     sep=' ',names=self.txtHeaders)
             # print(status,frameNo)
-            trackedBoxes,missingBoxes,newBoxes =\
-                iou.evaluatIOUs(prevlittersDF,littersDF.loc[:,'x1':'y2'].values,IOUThreshold=sys.float_info.min)
+            allBoxesData = iou.evaluatIOUs(prevlittersDF,\
+                        littersDF.loc[:,'x1':'y2'].values,\
+                            IOUThreshold=sys.float_info.min)
+
             
             
             status,frame = self.readFrame(self.totalFrames,frameNo)
@@ -315,9 +309,7 @@ class TrackDetections:
                 
                 if self.ellipse_mask is not None:
                     # frame = self.apply_horizon_image_filter(frame,self.ellipse_mask)
-                    trackedBoxes = self.apply_horizon_points_filter(trackedBoxes)
-                    missingBoxes = self.apply_horizon_points_filter(missingBoxes)
-                    newBoxes = self.apply_horizon_points_filter(newBoxes)
+                    allBoxesData = self.apply_horizon_points_filter(allBoxesData)
 
                 # maskedFrame = frame#cv.bitwise_and(frame,frame,mask=mask)
                 if prevFrameGray is None:
@@ -328,11 +320,14 @@ class TrackDetections:
                 
             
             # interpolate missingBoxes
+            missingBoxes = allBoxesData.loc[allBoxesData['info'] == 'inter',:]
+
             interpolatedMissingBoxes = self.interpolateNewPosition(missingBoxes,frameGray,prevFrameGray)
             if self.opticFlow:
-                trackedBoxes2,interpolatedMissingBoxes,newBoxes = \
-                    iou.evaluatIOUs(interpolatedMissingBoxes,newBoxes,trackType='iou+inter',IOUThreshold=0.001)
-                trackedBoxes = trackedBoxes + trackedBoxes2
+                BoxesDataIter2 = iou.evaluatIOUs(interpolatedMissingBoxes,\
+                        allBoxesData.loc[allBoxesData['info'] == 'new',:],\
+                            trackType='iou+inter',IOUThreshold=sys.float_info.min)
+                
 
             # assign new IDs for newBoxes
             newBoxes = self.allocateIDs(newBoxes)

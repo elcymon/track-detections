@@ -21,23 +21,24 @@ def evaluatIOUs(gts,dects,trackType='iou',IOUThreshold=sys.float_info.min):
     # interDur is the number of frames this object has been missing, default is 0
 
     #each dects value is (x1,y1,x2,y2)
-    trackedBox,missingBox,newBox = [],[],[]
-
+    resultDF = pd.DataFrame(columns = ['x1','y1','x2','y2','id','delx','dely','info','interDur'])
+    
     for d in range(len(dects)):
         iouMax = sys.float_info.min
         jMax = None
         #transform to desired format
         if trackType == 'iou':
-
-            detectionData = [list(dects[d]),None,None,None,None,0]
+            resultDF.loc[d,'x1':'y2'] = dects[d]
+            resultDF.loc[d,'interDur'] = 0
         else:
-            detectionData = dects[d]
+            resultDF.loc[d,:] = dects[d]
         
         #find maximum overlap of this box with gts data
-        for j in range(len(gts)):
+        for j,gtData in gts.iterrows():
             # print(gts)
             # print(detectionData)
-            iou = computeIOU(detectionData[0], gts[j][0])
+            
+            iou = computeIOU(resultDF.loc[d,'x1':'y2'], gtData['x1':'y2'])
             # if gts[j][1] == 'L102':
             #     print(iou,detectionData[0], gts[j])
             if iou > iouMax:
@@ -46,30 +47,20 @@ def evaluatIOUs(gts,dects,trackType='iou',IOUThreshold=sys.float_info.min):
         
         #if overlap is above threshold, it is tracked, else, this is a new box
         if iouMax >= IOUThreshold and jMax is not None:
-            detectionData[1] = gts[jMax][1]
-            gradientXY = computeCenterShiftXY(gts[jMax][0],detectionData[0])
-            detectionData[2] = gradientXY[0]
-            detectionData[3] = gradientXY[1]
-            # tType = 'iou'
-            # if trackType == 'iou+inter':
-            #     tType = 'iou'
-
-            detectionData[4] = 'iou' # iou tracked box
-            trackedBox.append(detectionData)
-            if len(gts) > 0:
-                del gts[jMax]
+            gradientXY = computeCenterShiftXY(resultDF.loc[d,'x1':'y2'], gtData[jMax,'x1':'y2'])
+            
+            resultDF.loc[d,'id':'info'] = [gts.loc[jMax,'id']] + gradientXY + ['iou']
+            
+            gts.drop(jMax, axis = 0, inplace = True)
         else:
-            detectionData[4]  = 'new'
-            newBox.append(detectionData)
+            resultDF.loc[d,'info'] = 'new'
+
     if trackType == 'iou':
-        for b in gts:
-            if b[4] == 'inter':
-                b[5] += 1
-            missingBox.append(b)
-    else:
-        missingBox = gts
+        gts.loc[gts['info'] == 'inter','interDur'] += 1
     
-    return trackedBox,missingBox,newBox
+    resultDF = resultDF.append(gts,ignore_index=True)
+    
+    return resultDF
 
 def computeIOU(boxA, boxB):
     # if boxes dont intersect
