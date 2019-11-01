@@ -67,12 +67,12 @@ class TrackDetections:
                             color=(100,100,100),thickness=1)
         return frame
 
-    def allocateIDs(self,newBoxes):
-
+    def allocateIDs(self,newBoxes,prefix = 'L'):
+        # prefix could be L or FP, i.e. litter or False Positive
         
         
         for i in range(len(newBoxes)):
-            newBoxes[i][1] = 'L{}'.format(self.litterID)
+            newBoxes[i][1] = '{}{}'.format(prefix,self.litterID)
             # print(litterID)
             
             self.litterID += 1
@@ -84,7 +84,7 @@ class TrackDetections:
                 data[i] = int(round(maxValue - 1))
         return data
                     
-    def interpolateNewPosition(self,missingBoxes,frameGray,prevFrameGray):
+    def interpolateNewPosition(self,missingBoxes,frameGray,prevFrameGray,centred=False):
         if frameGray is not None and prevFrameGray is not None:
             flow = cv.calcOpticalFlowFarneback(prevFrameGray, frameGray, None,\
                                          0.5, 3, 15, 3, 5, 1.2, 0)
@@ -104,12 +104,12 @@ class TrackDetections:
                 
                 delx = (flowx1 + flowx2) / 2.0
                 dely = (flowy1 + flowy2) / 2.0
-                
-                # newBox = (oldx1+delx,oldy1+dely,\
-                #             oldx2+delx,oldy2+dely)
-
-                newBox = (oldx1+flowx1,oldy1+flowy1,\
-                            oldx2+flowx2,oldy2+flowy2)
+                if centred:
+                    newBox = (oldx1+delx,oldy1+dely,\
+                                oldx2+delx,oldy2+dely)
+                else:
+                    newBox = (oldx1+flowx1,oldy1+flowy1,\
+                                oldx2+flowx2,oldy2+flowy2)
                 # print(newBox)
                 newBox = tuple(int(round(i)) for i in newBox)
             else:
@@ -152,21 +152,24 @@ class TrackDetections:
         return currDetections
     
     
-    def drawTrackerDF(self,trackerRow,frame,gtDF = False,detType=None):
+    def drawTrackerDF(self,trackerRow,frame,gtDF = False):
         for data in trackerRow:
             if data is not None:
                 box,boxID,delx,dely,boxType,interDur = data
                 x1,y1,x2,y2 = box
-                if gtDF:
+                if boxType == 'FN' or gtDF:
                     color = (150,50,100)
-                elif detType == 'TP' or boxType == 'iou':
+                elif boxType == 'TP' or boxType == 'iou':
                     color = (255,0,0)
-                elif detType == 'FP' or boxType == 'inter':
+                elif boxType == 'FP' or boxType == 'inter':
                     color = (0,0,255)
+                    if boxType == 'FP':
+                        frame = cv.putText(frame, boxID, (int(x2),int(y1)), \
+                                cv.FONT_HERSHEY_PLAIN, 1, color, 2, cv.LINE_8, False)
                 elif boxType == 'new':
                     color = (255,0,255)
                     frame = cv.putText(frame, boxID, (int(x2),int(y1)), \
-                                cv.FONT_HERSHEY_PLAIN, 1, (255,0,200), 2, cv.LINE_8, False)
+                                cv.FONT_HERSHEY_PLAIN, 1, color, 2, cv.LINE_8, False)
                 else:
                     print('invalid boxType: ',boxType)
                 # print(box)
@@ -204,10 +207,20 @@ class TrackDetections:
             # cv.imshow('horizon_ellipse', horizon_ellipse)
         return horizon_ellipse
 
-    def apply_horizon_points_filter(self,boxes):
-        filtered_points = []
+    def apply_horizon_points_filter(self,boxes,dataType=None):
+        if dataType == 'DataFrame':
+            filtered_points = pd.DataFrame(columns=boxes.columns)
+            boxes = boxes.values
+            i = 0
+        else:
+            filtered_points = []
         for b in boxes:
-            x1,y1,x2,y2 = b[0]
+            # print(b)
+            if dataType == 'DataFrame':
+                # print(b)
+                clss,conf,x1,y1,x2,y2 = b
+            else:
+                x1,y1,x2,y2 = b[0]
             #invert x and y to that of opencv shape/format
             yc,xc = round((x1 + x2) / 2), round((y1 + y2) / 2)
             yc = self.enforceBounds([yc],self.xMax)[0]
@@ -215,7 +228,11 @@ class TrackDetections:
             
             
             if self.ellipse_mask[int(xc),int(yc)] > 0:
-                filtered_points.append(b)
+                if dataType == 'DataFrame':
+                    filtered_points.loc[i,:] = b
+                    i += 1
+                else:
+                    filtered_points.append(b)
             # print(b,self.ellipse_mask[int(xc),int(yc)])
         
         return filtered_points
@@ -305,7 +322,7 @@ class TrackDetections:
                                     sep=' ',names=self.txtHeaders)
             # print(status,frameNo)
             trackedBoxes,missingBoxes,newBoxes =\
-                iou.evaluatIOUs(prevlittersDF,littersDF.loc[:,'x1':'y2'].values,IOUThreshold=sys.float_info.min)
+                iou.evaluateIOUs(prevlittersDF,littersDF.loc[:,'x1':'y2'].values,IOUThreshold=sys.float_info.min)
             
             
             status,frame = self.readFrame(self.totalFrames,frameNo)
@@ -339,7 +356,8 @@ class TrackDetections:
             interpolatedMissingBoxes = self.interpolateNewPosition(missingBoxes,frameGray,prevFrameGray)
             if self.opticFlow:
                 trackedBoxes2,interpolatedMissingBoxes,newBoxes = \
-                    iou.evaluatIOUs(interpolatedMissingBoxes,newBoxes,trackType='iou+inter',IOUThreshold=0.001)
+                    iou.evaluateIOUs(interpolatedMissingBoxes,newBoxes,trackType='iou+inter',\
+                        IOUThreshold=sys.float_info.min)
                 trackedBoxes = trackedBoxes + trackedBoxes2
 
             # assign new IDs for newBoxes
