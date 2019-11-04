@@ -14,6 +14,7 @@ class DetectionMetric:
                     resultVideo = None):
         
         self.opticFlow = opticFlow
+        self.framesTxt = framesTxt
         
         self.framesTxtPattern = framesTxt + '/' + ntpath.basename(videoName)[:-4] + '-{:05d}.txt'
         
@@ -29,12 +30,64 @@ class DetectionMetric:
         
         self.GTDF.trackerDF = self.GTDF.readCSVTrackerDF(GTcsvFile)
 
+        #dataframes for storing metrics information for analysis
+        self.data2analyse = ['seen2seen','seen2unseen','unseen2seen','unseen2unseen','seen','unseen','visible']
+        self.TPandFN = pd.DataFrame(columns=self.data2analyse)
+        self.FPdata = pd.DataFrame(columns=self.data2analyse)
+
         
         # self.trackFP.trackerDF = self.trackFP.readCSVTrackerDF(GTcsvFile)
     def tagBoxes(self,boxes,tag):
         for b in range(len(boxes)):
-            boxes[b][4] = tag
+            if tag == 'FP':
+                boxes[b][4] += ',' + tag
+            else:
+                boxes[b][4] = tag
         return boxes
+    def updateMetricsData(self,detectionData,frameNo):
+        
+        for data in detectionData:
+            box,boxID,delx,dely,boxType,interDur = data
+            
+            if  'L' in boxID:
+                df = self.TPandFN
+            elif 'F' in boxID:
+                df = self.FPdata
+            else:
+                print(boxID,'is an unknow ID category')
+                return
+        
+            if boxID not in df.index:
+                #insert default data for boxID not previously seen
+                df.loc[boxID,self.data2analyse] = [0,0,0,0,0,0,1]
+            else:
+                df.loc[boxID,'visible'] += 1
+            
+            if 'TP' in boxType or 'iou' in boxType or 'new' in boxType:
+                df.loc[boxID,frameNo + 1] = 1
+                df.loc[boxID,'seen'] += 1
+                if frameNo in df.columns:
+                    if df.loc[boxID,frameNo] == 1:
+                        df.loc[boxID,'seen2seen'] += 1
+                    elif df.loc[boxID,frameNo] == 0:
+                        df.loc[boxID,'unseen2seen'] += 1
+            elif 'FN' in boxType or 'inter' in boxType:
+                df.loc[boxID,frameNo + 1] = 0
+                df.loc[boxID,'unseen'] += 1
+                if frameNo in df.columns:
+                    if df.loc[boxID,frameNo] == 1:
+                        df.loc[boxID,'seen2unseen'] += 1
+                    elif df.loc[boxID,frameNo] == 0:
+                        df.loc[boxID,'unseen2unseen'] += 1
+            else:
+                print(boxType,'is an unknown box type category')
+
+    def saveMetricsData(self):
+        self.TPandFN.to_csv(self.trackFP.resultFilePrefix + '-TPandFN.csv')
+        self.FPdata.to_csv(self.trackFP.resultFilePrefix + '-FPdata.csv')
+
+    def saveTrackFP(self):
+        self.trackFP.trackerDF.to_csv(self.trackFP.resultFilePrefix + '.csv')
 
     def processFrame(self):
         prevFP = []
@@ -84,12 +137,12 @@ class DetectionMetric:
                     prevFP = self.trackFP.apply_horizon_points_filter(prevFP)
                     #reduce False Positives that are eventually True Positives in Ground Truth
                     # in current frame
-                    l = len(prevFP)
-                    _,prevFP,_ = \
-                        iou.evaluateIOUs(prevFP,truePositives,trackType='iou+inter',\
-                            IOUThreshold=sys.float_info.min)
-                    if l != len(prevFP):
-                        print('removed {}'.format(l - len(prevFP)))
+                    # l = len(prevFP)
+                    # _,prevFP,_ = \
+                    #     iou.evaluateIOUs(prevFP,truePositives,trackType='iou+inter',\
+                    #         IOUThreshold=sys.float_info.min)
+                    # if l != len(prevFP):
+                    #     print('removed {}'.format(l - len(prevFP)))
 
                 fpTracked,fpMissing,fpNew = \
                     iou.evaluateIOUs(prevFP,falsePositives,trackType='iou+inter',\
@@ -122,6 +175,7 @@ class DetectionMetric:
                 detectionData = self.trackFP.updateTrackerDF(frameNo,\
                     truePositives+falseNegatives+falsePositives)
                 
+                self.updateMetricsData(detectionData,frameNo)
 
                 
                 
@@ -142,11 +196,14 @@ if __name__ == '__main__':
     dataPath = '../videos/litter-recording/GOPR9027'
     videoName = dataPath + '/20190111GOPR9027.MP4'
     framesTxt = dataPath + '/GOPR9027-mobilenet-220/1r1c'
-    GTcsvFile = dataPath + '/GOPR9027-yolov3-608/1r1c-GT-pruned.csv'
+    GTcsvFile = dataPath + '/GOPR9027-yolov3-608/1r1c-20190111GOPR9027-GT-pruned.csv'
     resultVideo = 'detection'
 
     detectionMetric = DetectionMetric(GTcsvFile=GTcsvFile,
                 videoName=videoName,framesTxt=framesTxt,opticFlow=True,
-                txtType=resultVideo,resultVideo=None)
+                txtType=resultVideo,resultVideo=resultVideo)
     
     detectionMetric.processFrame()
+
+    detectionMetric.saveTrackFP()
+    detectionMetric.saveMetricsData()

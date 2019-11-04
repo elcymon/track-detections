@@ -14,7 +14,7 @@ class TrackDetections:
 
         self.opticFlow = opticFlow
         self.scale = 0.5
-
+        self.resultFilePrefix = framesTxt + '-' + ntpath.basename(videoName)[:-4]
         if txtType == 'GT':
             self.txtHeaders = ['class','x1','y1','x2','y2']
         else:
@@ -29,6 +29,7 @@ class TrackDetections:
         self.missingBoxThreshold = np.inf #5 #  
 
         self.framesTxtPattern = framesTxt + '/' + ntpath.basename(videoName)[:-4] + '-{:05d}.txt'
+        
         self.videoName = videoName
         self.direction = direction
         self.video = cv.VideoCapture(self.videoName)
@@ -47,7 +48,8 @@ class TrackDetections:
         
         self.ellipse_mask = None
         if resultVideo is not None:
-            self.vid_writer = cv.VideoWriter(self.videoName[:-4] + '-' + resultVideo + '.avi',
+            self.resultFilePrefix += '-' + resultVideo 
+            self.vid_writer = cv.VideoWriter(self.resultFilePrefix + '.avi',
                                     cv.CAP_FFMPEG, cv.VideoWriter_fourcc(*'X264'),
                                     50,(self.xMax,self.yMax))
         else:
@@ -90,9 +92,9 @@ class TrackDetections:
                                          0.5, 3, 15, 3, 5, 1.2, 0)
         else:
             flow = None
-            
-        for i in missingBoxes.index:
-            oldx1,oldy1,oldx2,oldy2 = missingBoxes.loc[i,'x1':'y2']
+        interpolationResult = []
+        for i in missingBoxes:
+            oldx1,oldy1,oldx2,oldy2 = i[0]
             if self.opticFlow or flow is None:
                 # print(oldx1,oldy1,oldx2,oldy2)
                 oldx1,oldx2 = self.enforceBounds([oldx1,oldx2],self.xMax)
@@ -111,11 +113,11 @@ class TrackDetections:
                     newBox = (oldx1+flowx1,oldy1+flowy1,\
                                 oldx2+flowx2,oldy2+flowy2)
                 # print(newBox)
-                newBox = [int(round(i)) for i in newBox]
+                newBox = tuple(int(round(i)) for i in newBox)
             else:
                 delx = 0
                 dely = 0
-                newBox = [oldx1,oldy1,oldx2,oldy2]
+                newBox = (oldx1,oldy1,oldx2,oldy2)
 
             #rearrange points
             # newx1,newy1,newx2,newy2 = newBox
@@ -123,10 +125,13 @@ class TrackDetections:
             #                 np.max([newx1,newx2]),np.max([newy1,newy2])])
             # print(flowx1,flowy1,flowx2,flowy2,newBox)
             if not (newBox[0] >= self.xMax or newBox[1] >= self.yMax\
-                or newBox[2] <= 0 or newBox[3] <= 0 or missingBoxes.loc[i,'interDur'] > self.missingBoxThreshold):
-                missingBoxes.loc[i,'x1':'info'] = newBox + [delx,dely,'inter']
-        
-        return missingBoxes
+                or newBox[2] <= 0 or newBox[3] <= 0 or i[5] > self.missingBoxThreshold):
+                i[0] = newBox
+                i[2] = round(delx,1)
+                i[3] = round(dely,1)
+                i[4] = 'inter'
+                interpolationResult.append(i)
+        return interpolationResult
     
     def updateTrackerDF(self,frameNo,allBoxes):
         currDetections = []
@@ -158,11 +163,16 @@ class TrackDetections:
                     color = (150,50,100)
                 elif boxType == 'TP' or boxType == 'iou':
                     color = (255,0,0)
-                elif boxType == 'FP' or boxType == 'inter':
+                elif 'FP' in boxType or boxType == 'inter':
                     color = (0,0,255)
-                    if boxType == 'FP':
+                    if 'FP' in boxType:
+                        if 'new' in boxType or 'iou' in boxType:
+                            txtColor = color
+                        else:
+                            txtColor = (0,255,255)
+
                         frame = cv.putText(frame, boxID, (int(x2),int(y1)), \
-                                cv.FONT_HERSHEY_PLAIN, 1, color, 2, cv.LINE_8, False)
+                                cv.FONT_HERSHEY_PLAIN, 1, txtColor, 2, cv.LINE_8, False)
                 elif boxType == 'new':
                     color = (255,0,255)
                     frame = cv.putText(frame, boxID, (int(x2),int(y1)), \
@@ -203,6 +213,15 @@ class TrackDetections:
         horizon_ellipse = cv.bitwise_and(frame,frame,mask = horizon_mask)
             # cv.imshow('horizon_ellipse', horizon_ellipse)
         return horizon_ellipse
+    def getCornersInFrame(self,corners):
+        filtered_points = []
+        for x,y in corners:
+            
+            if (x >= 0 and x < self.xMax) and (y >= 0 and y < self.yMax):
+                # print(x,y)
+                filtered_points.append((x,y))
+
+        return filtered_points
 
     def apply_horizon_points_filter(self,boxes,dataType=None):
         if dataType == 'DataFrame':
@@ -219,21 +238,30 @@ class TrackDetections:
             else:
                 x1,y1,x2,y2 = b[0]
             #invert x and y to that of opencv shape/format
-            yc,xc = round((x1 + x2) / 2), round((y1 + y2) / 2)
-            yc = self.enforceBounds([yc],self.xMax)[0]
-            xc = self.enforceBounds([xc],self.yMax)[0]
+            # yc,xc = round((x1 + x2) / 2), round((y1 + y2) / 2)
+            # yc = self.enforceBounds([yc],self.xMax)[0]
+            # xc = self.enforceBounds([xc],self.yMax)[0]
             
-            
-            if self.ellipse_mask[int(xc),int(yc)] > 0:
-                if dataType == 'DataFrame':
-                    filtered_points.loc[i,:] = b
-                    i += 1
-                else:
-                    filtered_points.append(b)
+            #get corners within image frame
+            corners = self.getCornersInFrame([(x1,y1),(x1,y2),(x2,y1),(x2,y2)])
+            # print(b,corners)
+            #check if any of the corners is within ellipse mask
+            for x,y in corners:
+                # print(self.ellipse_mask.shape)
+                #print(self.ellipse_mask[y,x],self.ellipse_mask[x,y],y,x,b)
+                if self.ellipse_mask[y,x] > 0:
+
+                    
+                    if dataType == 'DataFrame':
+                        filtered_points.loc[i,:] = b
+                        i += 1
+                    else:
+                        filtered_points.append(b)
+                    #exit loop if at least one corner is within mask
+                    break
             # print(b,self.ellipse_mask[int(xc),int(yc)])
         
         return filtered_points
-
     def pruneTrackerDF(self):
         pruneColumns = []
         for boxID in self.trackerDF.columns.get_level_values(0).unique():
@@ -283,7 +311,7 @@ class TrackDetections:
 
         self.video = cv.VideoCapture(self.videoName)
         if self.vid_writer is not None: #there is an instance of vid_writer already, record pruned trackerDF
-            self.vid_writer = cv.VideoWriter(self.videoName[:-4] + '-pruned.avi',
+            self.vid_writer = cv.VideoWriter(self.resultFilePrefix + '-pruned.avi',
                                     cv.CAP_FFMPEG, cv.VideoWriter_fourcc(*'X264'),
                                     50,(self.xMax,self.yMax))
         for frameNo in self.framesNumbers:
@@ -338,7 +366,9 @@ class TrackDetections:
                 
                 if self.ellipse_mask is not None:
                     # frame = self.apply_horizon_image_filter(frame,self.ellipse_mask)
-                    allBoxesData = self.apply_horizon_points_filter(allBoxesData)
+                    trackedBoxes = self.apply_horizon_points_filter(trackedBoxes)
+                    missingBoxes = self.apply_horizon_points_filter(missingBoxes)
+                    newBoxes = self.apply_horizon_points_filter(newBoxes)
 
                 # maskedFrame = frame#cv.bitwise_and(frame,frame,mask=mask)
                 if prevFrameGray is None:
@@ -349,8 +379,6 @@ class TrackDetections:
                 
             
             # interpolate missingBoxes
-            missingBoxes = allBoxesData.loc[allBoxesData['info'] == 'inter',:]
-
             interpolatedMissingBoxes = self.interpolateNewPosition(missingBoxes,frameGray,prevFrameGray)
             if self.opticFlow:
                 trackedBoxes2,interpolatedMissingBoxes,newBoxes = \
@@ -436,19 +464,14 @@ if __name__ == '__main__':
                                 framesTxt = framesTxt,
                                 direction = direction, horizonPoints = horizonPoints,
                                 opticFlow = opticFlow, txtType = txtType)
-    if resultVideo is None:
-            dfName = framesTxt 
-    else:
-        dfName = framesTxt + '-' + resultVideo 
 
-    
     trackDetections.processFrame()
     
     # print(trackDetections.trackerDF.columns)
     boxIDsList = trackDetections.trackerDF.columns.get_level_values(0).unique()
     # print(boxIDsList)
     print('total litter {}, last litter: {}'.format(len(boxIDsList),boxIDsList[-1]))
-    trackDetections.trackerDF.to_csv(dfName + '-unpruned.csv')
+    trackDetections.trackerDF.to_csv(trackDetections.resultFilePrefix + '-unpruned.csv')
 
     print('pruning')
     trackDetections.pruneTrackerDF()
@@ -459,7 +482,7 @@ if __name__ == '__main__':
     # print('saving to: %s' % trackerDFTxt)
     
     
-    trackDetections.trackerDF.to_csv(dfName + '-pruned.csv')
+    trackDetections.trackerDF.to_csv(trackDetections.resultFilePrefix + '-pruned.csv')
 
-    trackDetections.visualizeTrackerDF(dfName + '-pruned.csv')
+    trackDetections.visualizeTrackerDF(trackDetections.resultFilePrefix + '-pruned.csv')
 
