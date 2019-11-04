@@ -14,7 +14,7 @@ def computeCenterShiftXY(boxA,boxB):
     centreB = getCentre(boxB)
     return (round(centreB[0] - centreA[0],2), round(centreB[1] - centreA[1]),2)
 
-def evaluatIOUs(gts,dects,trackType='iou',IOUThreshold=sys.float_info.min):
+def evaluateIOUs(gts,dects,trackType='iou',IOUThreshold=sys.float_info.min):
     #each gts element is [(x1,y1,x2,y2),id,delx,dely,info,interDur]
     # delx,dely are gradient in x,y direction, which is None initially
     # info could be new, iou or inter.
@@ -37,8 +37,8 @@ def evaluatIOUs(gts,dects,trackType='iou',IOUThreshold=sys.float_info.min):
         for j,gtData in gts.iterrows():
             # print(gts)
             # print(detectionData)
-            
-            iou = computeIOU(resultDF.loc[d,'x1':'y2'], gtData['x1':'y2'])
+            # print(detectionData,gts)
+            iou = computeIOU(detectionData[0], gts[j][0])
             # if gts[j][1] == 'L102':
             #     print(iou,detectionData[0], gts[j])
             if iou > iouMax:
