@@ -223,7 +223,7 @@ class TrackDetections:
 
         return filtered_points
 
-    def apply_horizon_points_filter(self,boxes,dataType=None):
+    def apply_horizon_points_filter(self,boxes,dataType=None,boxCentre=True):
         if dataType == 'DataFrame':
             filtered_points = pd.DataFrame(columns=boxes.columns)
             boxes = boxes.values
@@ -237,16 +237,21 @@ class TrackDetections:
                 clss,conf,x1,y1,x2,y2 = b
             else:
                 x1,y1,x2,y2 = b[0]
-            #invert x and y to that of opencv shape/format
-            # yc,xc = round((x1 + x2) / 2), round((y1 + y2) / 2)
-            # yc = self.enforceBounds([yc],self.xMax)[0]
-            # xc = self.enforceBounds([xc],self.yMax)[0]
-            
-            #get corners within image frame
-            corners = self.getCornersInFrame([(x1,y1),(x1,y2),(x2,y1),(x2,y2)])
+            if boxCentre:
+                #invert x and y to that of opencv shape/format
+
+                xc,yc = round((x1 + x2) / 2), round((y1 + y2) / 2)
+                xc = self.enforceBounds([xc],self.xMax)[0]
+                yc = self.enforceBounds([yc],self.yMax)[0]
+                corners = [(int(xc),int(yc))]
+            else:
+                
+                #get corners within image frame
+                corners = self.getCornersInFrame([(x1,y1),(x1,y2),(x2,y1),(x2,y2)])
             # print(b,corners)
             #check if any of the corners is within ellipse mask
             for x,y in corners:
+                # print(x,y)
                 # print(self.ellipse_mask.shape)
                 #print(self.ellipse_mask[y,x],self.ellipse_mask[x,y],y,x,b)
                 if self.ellipse_mask[y,x] > 0:

@@ -137,12 +137,12 @@ class DetectionMetric:
                     prevFP = self.trackFP.apply_horizon_points_filter(prevFP)
                     #reduce False Positives that are eventually True Positives in Ground Truth
                     # in current frame
-                    # l = len(prevFP)
-                    # _,prevFP,_ = \
-                    #     iou.evaluateIOUs(prevFP,truePositives,trackType='iou+inter',\
-                    #         IOUThreshold=sys.float_info.min)
-                    # if l != len(prevFP):
-                    #     print('removed {}'.format(l - len(prevFP)))
+                    l = len(prevFP)
+                    _,prevFP,_ = \
+                        iou.evaluateIOUs(prevFP,truePositives,trackType='iou+inter',\
+                            IOUThreshold=sys.float_info.min)
+                    if l != len(prevFP):
+                        print('removed {}'.format(l - len(prevFP)))
 
                 fpTracked,fpMissing,fpNew = \
                     iou.evaluateIOUs(prevFP,falsePositives,trackType='iou+inter',\
