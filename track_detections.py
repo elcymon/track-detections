@@ -5,16 +5,17 @@ import pandas as pd
 import iou
 import utils
 import sys
+from zipfile import ZipFile
 
 class TrackDetections:
-    def __init__(self,videoName,framesTxt,direction,\
+    def __init__(self,videoName,framesTxt,resultPath,direction,zipFile,\
                     horizonPoints = [18,162,494,59,937,143], #[162,18,59,494,143,937],
-                    opticFlow=False,txtType='GT',resultVideo = None):
+                    opticFlow=False,txtType='GT',resultVideo = None,imshow=False):
         self.boxData = ['x1','y1','x2','y2','id','delx','dely','info','interDur']
-
+        self.imshow = imshow
         self.opticFlow = opticFlow
         self.scale = 0.5
-        self.resultFilePrefix = framesTxt + '-' + ntpath.basename(videoName)[:-4]
+        self.resultFilePrefix = resultPath #framesTxt + '-' + ntpath.basename(videoName)[:-4]
         if txtType == 'GT':
             self.txtHeaders = ['class','x1','y1','x2','y2']
         else:
@@ -27,8 +28,8 @@ class TrackDetections:
         self.yMax = 540
 
         self.missingBoxThreshold = np.inf #5 #  
-
-        self.framesTxtPattern = framesTxt + '/' + ntpath.basename(videoName)[:-4] + '-{:05d}.txt'
+        self.zip = ZipFile(zipFile)
+        self.framesTxtPattern = framesTxt + '-{:05d}.txt'
         
         self.videoName = videoName
         self.direction = direction
@@ -211,6 +212,7 @@ class TrackDetections:
     def apply_horizon_image_filter(self,frame,horizon_mask):
         
         horizon_ellipse = cv.bitwise_and(frame,frame,mask = horizon_mask)
+        # if self.imshow:
             # cv.imshow('horizon_ellipse', horizon_ellipse)
         return horizon_ellipse
     def getCornersInFrame(self,corners):
@@ -335,8 +337,8 @@ class TrackDetections:
                 if littersDF is not None:
                     frame = self.drawTrackerDF(littersDF, frame)
                 
-
-                cv.imshow("TrackerDF",frame)
+                if self.imshow:
+                    cv.imshow("TrackerDF",frame)
                 if self.vid_writer is not None:
                     self.vid_writer.write(frame.astype(np.uint8))
 
@@ -347,9 +349,9 @@ class TrackDetections:
         
         prevlittersDF = []
         prevFrameGray = None
-
+        # self.zip.printdir()
         for frameNo in self.framesNumbers:
-            littersDF = pd.read_csv(self.framesTxtPattern.format(frameNo + 1),
+            littersDF = pd.read_csv(self.zip.open(self.framesTxtPattern.format(frameNo + 1)),
                                     sep=' ',names=self.txtHeaders)
             # print(status,frameNo)
             trackedBoxes,missingBoxes,newBoxes =\
@@ -443,22 +445,29 @@ class TrackDetections:
                 frame = self.drawBoxes(littersDF.loc[:,'x1':'y2'],frame)
                 frame = self.drawTrackerDF(prevlittersDF,frame)
                 
+                if self.imshow:
+                    # cv.imshow('Ellipse Mask',self.ellipse_mask)
+                    cv.imshow('Frame',frame)
+                    # cv.imshow("mask",mask)
                 
-                # cv.imshow('Ellipse Mask',self.ellipse_mask)
-                cv.imshow('Frame',frame)
                 if self.vid_writer is not None:
                     self.vid_writer.write(frame.astype(np.uint8))
 
-                # cv.imshow("mask",mask)
                 key = cv.waitKey(1) & 0xFF
                 if key == ord('q') or key == ord('Q'):
                     break
         
 
 if __name__ == '__main__':
-    dataPath = '../videos/litter-recording/GOPR9027'
-    framesTxt = dataPath + '/GOPR9027-yolov3-608/1r1c'
-    videoName = dataPath + '/20190111GOPR9027.MP4'
+    networkName = sys.argv[1]
+    videoFile = sys.argv[2]
+    imshow = eval(sys.argv[3])
+
+    dataPath = '../data'
+    resultPath = dataPath + '/model_data/' + videoFile + '/' + networkName + '/' + videoFile + '-' + networkName
+    zipFile = dataPath + '/' + networkName + '.zip'
+    framesTxt = networkName + '/1r1c/' + videoFile
+    videoName = dataPath + '/mp4/' + videoFile + '.MP4'
     direction='forward'
     horizonPoints = [18,162,494,59,937,143] # x1,y1, x2,y2, x3,y3
     opticFlow=True
@@ -466,9 +475,10 @@ if __name__ == '__main__':
     resultVideo = 'GT'#None # string for name of experiment/type
 
     trackDetections = TrackDetections(videoName=videoName, resultVideo = resultVideo,
-                                framesTxt = framesTxt,
+                                framesTxt = framesTxt,resultPath=resultPath,
                                 direction = direction, horizonPoints = horizonPoints,
-                                opticFlow = opticFlow, txtType = txtType)
+                                opticFlow = opticFlow, txtType = txtType,zipFile=zipFile,
+                                imshow=imshow)
 
     trackDetections.processFrame()
     

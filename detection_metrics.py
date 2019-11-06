@@ -7,26 +7,32 @@ import utils
 import sys
 from track_detections import TrackDetections
 from copy import deepcopy
+from zipfile import ZipFile
 
 class DetectionMetric:
-    def __init__(self,GTcsvFile,videoName,framesTxt,\
-                    opticFlow=True,txtType='detection',\
-                    resultVideo = None):
+    def __init__(self,GTcsvFile,videoName,framesTxt,resultPath,\
+                    zipFile,opticFlow=True,txtType='detection',\
+                    resultVideo = None, imshow= False):
         
         self.opticFlow = opticFlow
         self.framesTxt = framesTxt
-        
-        self.framesTxtPattern = framesTxt + '/' + ntpath.basename(videoName)[:-4] + '-{:05d}.txt'
+        self.imshow = imshow
+        self.resultFilePrefix = resultPath
+        self.zip = ZipFile(zipFile)
+        self.framesTxtPattern = framesTxt + '-{:05d}.txt'
+        # self.framesTxtPattern = framesTxt + '/' + ntpath.basename(videoName)[:-4] + '-{:05d}.txt'
         
         self.trackFP = TrackDetections(videoName = videoName,\
+                resultPath=resultPath,zipFile=zipFile,\
                 framesTxt = framesTxt, direction = 'forward',opticFlow=True,\
-                txtType=txtType,resultVideo=resultVideo)
+                txtType=txtType,resultVideo=resultVideo,imshow=imshow)
         self.framesTxtPattern = self.trackFP.framesTxtPattern
         self.txtHeaders = self.trackFP.txtHeaders
 
         self.GTDF = TrackDetections(videoName = videoName,\
+                resultPath=resultPath,zipFile=zipFile,\
                 framesTxt = '', direction = 'forward',opticFlow=True,\
-                txtType = 'GT',resultVideo = None)
+                txtType = 'GT',resultVideo = None,imshow=imshow)
         
         self.GTDF.trackerDF = self.GTDF.readCSVTrackerDF(GTcsvFile)
 
@@ -117,7 +123,7 @@ class DetectionMetric:
                 gtdfLitters = self.GTDF.getBoxesFromTrackerDF(frameNo + 1)
 
                 # read network detection for current frame
-                littersDF = pd.read_csv(self.framesTxtPattern.format(frameNo + 1),
+                littersDF = pd.read_csv(self.zip.open(self.framesTxtPattern.format(frameNo + 1)),
                                     sep=' ', names=self.txtHeaders)
                 #filter based on mask
                 littersDF = self.trackFP.apply_horizon_points_filter(littersDF, dataType = 'DataFrame')
@@ -137,12 +143,12 @@ class DetectionMetric:
                     prevFP = self.trackFP.apply_horizon_points_filter(prevFP)
                     #reduce False Positives that are eventually True Positives in Ground Truth
                     # in current frame
-                    l = len(prevFP)
-                    _,prevFP,_ = \
-                        iou.evaluateIOUs(prevFP,truePositives,trackType='iou+inter',\
-                            IOUThreshold=sys.float_info.min)
-                    if l != len(prevFP):
-                        print('removed {}'.format(l - len(prevFP)))
+                    # l = len(prevFP)
+                    # _,prevFP,_ = \
+                    #     iou.evaluateIOUs(prevFP,truePositives,trackType='iou+inter',\
+                    #         IOUThreshold=sys.float_info.min)
+                    # if l != len(prevFP):
+                    #     print('removed {}'.format(l - len(prevFP)))
 
                 fpTracked,fpMissing,fpNew = \
                     iou.evaluateIOUs(prevFP,falsePositives,trackType='iou+inter',\
@@ -182,8 +188,8 @@ class DetectionMetric:
                 #visualize result
                 if detectionData is not None:
                     frame = self.trackFP.drawTrackerDF(detectionData,frame,gtDF = False)
-                
-                cv.imshow("Detection Metrics", frame)
+                if self.imshow:
+                    cv.imshow("Detection Metrics", frame)
 
                 if self.trackFP.vid_writer is not None:
                     self.trackFP.vid_writer.write(frame.astype(np.uint8))
@@ -193,15 +199,22 @@ class DetectionMetric:
                     break
 
 if __name__ == '__main__':
-    dataPath = '../videos/litter-recording/GOPR9027'
-    videoName = dataPath + '/20190111GOPR9027.MP4'
-    framesTxt = dataPath + '/GOPR9027-mobilenet-220/1r1c'
-    GTcsvFile = dataPath + '/GOPR9027-yolov3-608/1r1c-20190111GOPR9027-GT-pruned.csv'
+    networkName = sys.argv[1]
+    videoFile = sys.argv[2]
+    imshow = eval(sys.argv[3])
+
+    dataPath = '../data'
+    resultPath = dataPath + '/model_data/' + videoFile + '/' + networkName + '/' + videoFile + '-' + networkName
+    zipFile = dataPath + '/' + networkName + '.zip'
+    framesTxt = networkName + '/1r1c/' + videoFile
+    videoName = dataPath + '/mp4/' + videoFile + '.MP4'
+    gtNetwork = 'yolov3-litter_10000-th0p0-nms0p0-iSz608'
+    GTcsvFile = dataPath + '/model_data/' + videoFile + '/' + gtNetwork + '/' + videoFile + '-' + gtNetwork + '-GT-pruned.csv'
     resultVideo = 'detection'
 
-    detectionMetric = DetectionMetric(GTcsvFile=GTcsvFile,
-                videoName=videoName,framesTxt=framesTxt,opticFlow=True,
-                txtType=resultVideo,resultVideo=resultVideo)
+    detectionMetric = DetectionMetric(GTcsvFile=GTcsvFile,framesTxt=framesTxt,
+                zipFile=zipFile,resultPath=resultPath,videoName=videoName,opticFlow=True,
+                txtType=resultVideo,resultVideo=resultVideo,imshow=imshow)
     
     detectionMetric.processFrame()
 
