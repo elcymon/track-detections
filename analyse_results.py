@@ -67,7 +67,7 @@ def summarise_csv_data(resultsPath,resultCategory):
     
     summaryDF = pd.DataFrame()
     summaryCols = ['seen2seen','seen2unseen','P_s2s',\
-                'unseen2seen','unseen2unseen','P_s2u',\
+                'unseen2seen','unseen2unseen','P_u2s',\
                 'seen','unseen','visible','P_visible']
     for videoFolder in glob.glob(resultsPath + '*'):
         videoName = ntpath.basename(videoFolder)
@@ -79,15 +79,24 @@ def summarise_csv_data(resultsPath,resultCategory):
             if '608' in networkName:
                 #get information about number of unique litters from GT
                 #csv file for both pruned and unpruned
+                dataHeader = pd.MultiIndex.from_product([[networkName],\
+                            ['nlitter_pruned','nlitter_unpruned']],names=['Network','Data'])
+                if len(summaryDF.columns) == 0:
+                    summaryDF = pd.DataFrame(columns=dataHeader)
+                    # self.trackerDF.columns.names
+                else:
+                    # print(self.trackerDF.columns.union(dataHeader))
+                    summaryDF = summaryDF.reindex(columns=summaryDF.columns.union(dataHeader))
+                
                 csvDF = pd.read_csv(csvFile + '-GT-unpruned.csv',header=[0,1],index_col=0,
                                     low_memory=False,nrows=10)
                 litterIDs = csvDF.columns.get_level_values(0).unique()
-                summaryDF.loc[videoName,'nlitter_unpruned'] = len(litterIDs)
+                summaryDF.loc[videoName,(networkName,'nlitter_unpruned')] = len(litterIDs)
                 
                 csvDF = pd.read_csv(csvFile + '-GT-pruned.csv',header=[0,1],index_col=0,
                                     low_memory=False,nrows=10)
                 litterIDs = csvDF.columns.get_level_values(0).unique()
-                summaryDF.loc[videoName,'nlitter_pruned'] = len(litterIDs)
+                summaryDF.loc[videoName,(networkName,'nlitter_pruned')] = len(litterIDs)
                 continue
             csvFile = csvFile + '-detection-' + resultCategory + '.csv'
             csvDF = pd.read_csv(csvFile,index_col=0,header=0).loc[:,'seen2seen':'visible']
@@ -114,7 +123,7 @@ def summarise_csv_data(resultsPath,resultCategory):
                 csvDFsummary['unseen2seen'] / (csvDFsummary['unseen2seen'] + csvDFsummary['unseen2unseen'])
             csvDFsummary['P_visible'] = \
                 csvDFsummary['seen'] / (csvDFsummary['visible'])
-            summaryDF.loc[videoName,dataHeader] = csvDFsummary.values
+            summaryDF.loc[videoName,dataHeader] = csvDFsummary.loc[summaryCols].values
 #            summaryDF.merge(csvDF.sum(),how='left',on=videoName,left_on=networkName)
 #            csvDF = csvDF
 #            return csvDF
