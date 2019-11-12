@@ -70,8 +70,13 @@ def findCircle(x1, y1, x2, y2, x3, y3) :
 
     return (round(h),round(k)),round(r),pt1_angle,pt2_angle
 
-def getPointAngle(pt,centre):
-    return 180 * np.arctan2(pt[1] - centre[1], pt[0] - centre[0]) / np.pi
+def getPointAngle(pt,centre,degrees=True):
+    angle = np.arctan2(pt[1] - centre[1], pt[0] - centre[0])
+    
+    if degrees:
+        return 180 * angle / np.pi
+    
+    return angle
 # Driver code 
 if __name__ == "__main__" : 
 

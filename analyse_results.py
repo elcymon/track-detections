@@ -6,6 +6,7 @@ import glob
 import cv2 as cv
 import matplotlib.pyplot as plt
 import seaborn as sns
+import utils
 
 def get_detection_metric_data(filename):
     return pd.read_csv(filename,index_col=0)
@@ -240,6 +241,37 @@ def summarise_csv_data(resultsPath,resultCategory):
 #            csvDF = csvDF
 #            return csvDF
     return summaryDF
+def close2frame_border_mask(fwidth,fheight,edgewidth,horizon):
+    center,radius,start_angle,end_angle = utils.findCircle(*horizon)
+    maskDF = pd.DataFrame(index=np.arange(1,fheight+1,1,dtype=np.int),
+                          columns=np.arange(1,fwidth+1,1,dtype=np.int),dtype=np.bool)
+    maskDF.loc[:,:] = False
+    
+    for x in maskDF.columns:
+#        theta = np.arccos((x - center[0])/float(radius))
+        radiusY = center[1] -  np.sqrt(np.square(radius) - np.square(x - center[0]))  #radius * np.sin(theta) - fheight#
+        print(x)#,radiusY,theta)
+        if x <= edgewidth or x >= maskDF.columns[-1] - edgewidth:
+            ymax = maskDF.index[-1]
+        else:
+            ymax = np.rint(radiusY + edgewidth/2.0)
+        ymin = np.rint(radiusY - edgewidth/2.0)
+        
+        maskDF.loc[ymin:ymax,x] = True
+    
+    sns.heatmap(maskDF.astype(np.int),vmax=1)
+    return maskDF
+def pct_close_to_frame_border(filename,maskDF=None):
+    if maskDF is None:
+        maskDF = close2frame_border_mask(960,540,50,[18,162,494,59,937,143])
+    first_appearanceDF = pd.read_csv(filename,index_col=0,header=0)
+    total_appearances = first_appearanceDF.sum().sum()
+    total_close_to_frame_border = 0
+    for col in first_appearanceDF.columns:
+        print(col)
+        total_close_to_frame_border += first_appearanceDF.loc[maskDF[int(col)],col].sum()
+    pct = float(total_close_to_frame_border)/total_appearances * 100
+    return total_appearances,total_close_to_frame_border,pct
 
 def first_appearance(resultsPath):
     firstAppearanceDF = pd.DataFrame(index=np.arange(1,541,1,dtype=np.int),
