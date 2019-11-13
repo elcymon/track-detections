@@ -114,25 +114,41 @@ def bin_durations(df,binStart,binEnd,binWidth):
 #                ntwkDF = binnedDF[ntwk]
 
 def binned_s2s_uns2uns_data_to_latex(summary_analysis):
-    subCols = ['f (\%)','f x t (\%)']
+    subCols = ['f (%)','f x t (%)']
 #    ntwks = ['yolo-128','yolo-224','mobileSSD-124','mobileSSD-220']
 #    dataHeader = pd.MultiIndex.from_product([ntwks,subCols],names=['Network','t'])
     for bincsv in ['*binned_s2s*.csv','*binned_uns2uns*.csv']:
-        binned_latexDF = pd.DataFrame()
+        binned_latexDF = None#pd.DataFrame()
         for binName in glob.glob(summary_analysis + bincsv):
             binnedDF = pd.read_csv(binName,header=[0,1],index_col=0,low_memory=False)
-            
+            binnedDFIndex = binnedDF.index.values
+            #change the last index so it is uniform across networks
+            binnedDFIndex[-1] = '> 50'
+            binnedDF.index = binnedDFIndex
             networkNames = binnedDF.columns.get_level_values(0).unique()
             for ntwk in networkNames:
-                print(binnedDF[ntwk])
-                return
-                for tbin in binnedDF.index:
-#                    print(binnedDF.loc[tbin,[(ntwk,'Frequency'),(ntwk,'PctFreq')]].values)
-                    binned_latexDF.loc[tbin,ntwk + '-f'] = \
-                        '{:.0f} ({:.2f})'.format(*binnedDF.loc[tbin,[(ntwk,'Frequency'),(ntwk,'PctFreq')]])
-                    binned_latexDF.loc[tbin,ntwk + '-ft'] = \
-                        '{:.0f} ({:.2f})'.format(*binnedDF.loc[tbin,[(ntwk,'FreqxSteps'),(ntwk,'PctFreqxSteps')]])
-            print(binName.replace('.csv','.tex'))
+                print(ntwk)
+                ntwkShort = shorten_network_name(ntwk)
+                dataHeader = pd.MultiIndex.from_product([[ntwkShort],subCols])
+                if binned_latexDF is None:
+                    binned_latexDF = pd.DataFrame(columns = dataHeader,index = binnedDF.index)
+#                    print(binned_latexDF)
+                else:
+                    binned_latexDF = binned_latexDF.reindex(columns = binned_latexDF.columns.union(dataHeader))
+                binned_latexDF.loc[binnedDF.index,(ntwkShort,subCols[0])] = \
+                    ['{:.0f} ({:.2f})'.format(d,pctd) for d,pctd in zip(binnedDF[ntwk]['Frequency'],binnedDF[ntwk]['PctFreq'])]
+                binned_latexDF.loc[binnedDF.index,(ntwkShort,subCols[1])] = \
+                    ['{:.0f} ({:.2f})'.format(d,pctd) for d,pctd in zip(binnedDF[ntwk]['FreqxSteps'],binnedDF[ntwk]['PctFreqxSteps'])]
+                    
+#                print(binnedDF[ntwk])
+#                return
+#                for tbin in binnedDF.index:
+##                    print(binnedDF.loc[tbin,[(ntwk,'Frequency'),(ntwk,'PctFreq')]].values)
+#                    binned_latexDF.loc[tbin,ntwk + '-f'] = \
+#                        '{:.0f} ({:.2f})'.format(*binnedDF.loc[tbin,[(ntwk,'Frequency'),(ntwk,'PctFreq')]])
+#                    binned_latexDF.loc[tbin,ntwk + '-ft'] = \
+#                        '{:.0f} ({:.2f})'.format(*binnedDF.loc[tbin,[(ntwk,'FreqxSteps'),(ntwk,'PctFreqxSteps')]])
+#            print(binName.replace('.csv','.tex'))
             binned_latexDF.to_latex(binName.replace('.csv','.tex'))
                         
             
