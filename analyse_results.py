@@ -124,6 +124,8 @@ def binned_s2s_uns2uns_data_to_latex(summary_analysis):
             
             networkNames = binnedDF.columns.get_level_values(0).unique()
             for ntwk in networkNames:
+                print(binnedDF[ntwk])
+                return
                 for tbin in binnedDF.index:
 #                    print(binnedDF.loc[tbin,[(ntwk,'Frequency'),(ntwk,'PctFreq')]].values)
                     binned_latexDF.loc[tbin,ntwk + '-f'] = \
@@ -175,6 +177,58 @@ def integrity_check(videosPath,resultsPath):
     
     videosDF = videosDF.astype(int)
     return videosDF
+def shorten_network_name(networkName):
+    if 'mobile' in networkName:
+        ntwk = 'mSSD-'
+    elif 'yolov3-tiny' in networkName:
+        ntwk = 'yolov3-tiny-'
+    elif 'yolov3-litter' in networkName:
+        ntwk = 'yolov3-'
+    
+    ntwk += networkName.replace('iSz','').split('-')[-1]
+    return ntwk
+
+def plot_metric_data(df,filename,legend=True,ylim=[0,1]):
+    f = plt.figure()
+    ax = f.gca()
+    df.plot(kind='line',style='-o',legend=False,ax = ax,ylim=ylim)
+    ax.set_xticklabels(np.arange(0,df.shape[0],1))
+    plt.legend(loc='best',ncol=2)
+    f.savefig(filename,bbox_inches='tight')
+    
+def summary_csv_data_to_latex(filename):
+    df = pd.read_csv(filename + '.csv',header=[0,1],index_col=0)
+    metricSUM = ['visible','seen','unseen','seen2seen','seen2unseen','unseen2seen','unseen2unseen']
+    metricMean = ['P_visible','P_s2s','P_u2s']
+    latexDF = pd.DataFrame(index= metricSUM + metricMean)
+    for network in df.columns.get_level_values(0).unique():
+        if '608' in network:
+            continue
+        print(network)
+        
+        ntwk = shorten_network_name(network)
+        networkDF = df[network]
+        
+        latexDF.loc[metricSUM,ntwk] = networkDF[metricSUM].sum()
+        latexDF.loc[metricMean,ntwk] = ['${:.4f} \pm {:.4f}$'.format(m,s) \
+                 for m,s in zip(networkDF[metricMean].mean(),networkDF[metricMean].std())]
+    latexDF.to_latex(filename + '.tex',escape=False)
+        
+def visualize_summary_csv_data(filename):
+    df = pd.read_csv(filename + '.csv',header=[0,1],index_col=0)
+    unique_litterDF = df['yolov3-litter_10000-th0p0-nms0p0-iSz608']
+#    print(unique_litterDF.columns)
+    unique_litterDF.columns = [i.replace('nlitter_','') for i in unique_litterDF.columns]
+    if 'TPandFN' in filename:
+        plot_metric_data(unique_litterDF,filename + 'nlitter.png',ylim=[0,unique_litterDF.max().max() * 1.1])
+        print(unique_litterDF.sum())
+        
+    for metric in ['P_s2s','P_u2s','P_visible']:
+        metricDF = df.xs(metric,level=1,drop_level=False,axis=1)
+        metricDF.columns = [shorten_network_name(i) for i in metricDF.columns.droplevel(1)]
+        plot_metric_data(metricDF,filename + '-' + metric + '.png')
+    
+    return df
 
 def summarise_csv_data(resultsPath,resultCategory):
     
@@ -241,6 +295,7 @@ def summarise_csv_data(resultsPath,resultCategory):
 #            csvDF = csvDF
 #            return csvDF
     return summaryDF
+
 def close2frame_border_mask(fwidth,fheight,edgewidth,horizon):
     center,radius,start_angle,end_angle = utils.findCircle(*horizon)
     maskDF = pd.DataFrame(index=np.arange(1,fheight+1,1,dtype=np.int),
@@ -251,27 +306,35 @@ def close2frame_border_mask(fwidth,fheight,edgewidth,horizon):
 #        theta = np.arccos((x - center[0])/float(radius))
         radiusY = center[1] -  np.sqrt(np.square(radius) - np.square(x - center[0]))  #radius * np.sin(theta) - fheight#
         print(x)#,radiusY,theta)
-        if x <= edgewidth or x >= maskDF.columns[-1] - edgewidth:
+        if False and (x <= edgewidth or x >= maskDF.columns[-1] - edgewidth):
             ymax = maskDF.index[-1]
         else:
-            ymax = np.rint(radiusY + edgewidth/2.0)
-        ymin = np.rint(radiusY - edgewidth/2.0)
+            ymax = np.rint(radiusY + edgewidth)#/2.0)
+        ymin = maskDF.index[0]#np.rint(radiusY)# - edgewidth/2.0)
         
         maskDF.loc[ymin:ymax,x] = True
     
-    sns.heatmap(maskDF.astype(np.int),vmax=1)
+#    sns.heatmap(maskDF.astype(np.int),vmax=1)
     return maskDF
 def pct_close_to_frame_border(filename,maskDF=None):
     if maskDF is None:
-        maskDF = close2frame_border_mask(960,540,50,[18,162,494,59,937,143])
+        maskDF = close2frame_border_mask(960,540,10,[18,162,494,59,937,143])
     first_appearanceDF = pd.read_csv(filename,index_col=0,header=0)
+#    heatmap(first_appearanceDF,filename.replace('.csv','.png'),vmax=1,colorbar=False)
+    othersDF = pd.DataFrame(index=maskDF.index,columns=maskDF.columns)
+    othersDF.loc[:,:] = 0
+    
     total_appearances = first_appearanceDF.sum().sum()
     total_close_to_frame_border = 0
     for col in first_appearanceDF.columns:
         print(col)
         total_close_to_frame_border += first_appearanceDF.loc[maskDF[int(col)],col].sum()
+        othersDF.loc[~maskDF[int(col)],int(col)] = first_appearanceDF.loc[~maskDF[int(col)],col]
     pct = float(total_close_to_frame_border)/total_appearances * 100
-    return total_appearances,total_close_to_frame_border,pct
+    
+    sns.heatmap(othersDF,vmax=1,cbar=False,yticklabels=[],xticklabels=[])
+    print(total_appearances,total_close_to_frame_border,pct)
+    return othersDF,first_appearanceDF#,total_appearances,total_close_to_frame_border,pct
 
 def first_appearance(resultsPath):
     firstAppearanceDF = pd.DataFrame(index=np.arange(1,541,1,dtype=np.int),
@@ -300,9 +363,9 @@ def create_frameDim_DF():
                                      columns=np.arange(1,961,1,dtype=np.int))
     frame.loc[:,:] = 0
     return frame
-def heatmap(df,figName,vmax):
+def heatmap(df,figName,vmax,colorbar=True):
     f = plt.figure(figsize=(16,9))
-    sns.heatmap(df,annot=False,xticklabels=[],yticklabels=[],ax=f.gca(),vmax=vmax)
+    sns.heatmap(df,annot=False,xticklabels=[],yticklabels=[],ax=f.gca(),vmax=vmax,cbar=colorbar)
     f.savefig(figName, bbox_inches='tight')
     
 def bbox_heatdata(resultsPath,summary_analysis,
@@ -390,7 +453,7 @@ if __name__ == '__main__':
 #    s2s_duration,uns2uns_duration = process_consecutive_occurrences(resultPath)
 #    s2s_duration = update_duration_columns(s2s_duration)
 #    uns2uns_duration = update_duration_columns(uns2uns_duration)
-    process_s2s_uns2uns_data(resultPath,summary_analysis)
+#    process_s2s_uns2uns_data(resultPath,summary_analysis)
 #    firstAppearanceDF = first_appearance(resultPath)
 #    dataDict = bbox_heatdata(resultPath,summary_analysis,centre=False)
     
