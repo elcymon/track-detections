@@ -8,8 +8,9 @@ Created on Wed Nov 13 14:43:37 2019
 
 import pandas as pd
 import numpy as np
+import os
 
-def simulate_steps(p_s2s,p_u2s,nlitter,tsteps):
+def simulate_steps(p_visible,p_s2s,p_u2s,nlitter,tsteps):
     data2analyse = ['seen2seen','seen2unseen','unseen2seen','unseen2unseen','seen','unseen','visible']
     detection_data = pd.DataFrame(columns=data2analyse,index=['L{}'.format(i) for i in range(nlitter)])
     detection_data.loc[:,:] = 0
@@ -19,7 +20,7 @@ def simulate_steps(p_s2s,p_u2s,nlitter,tsteps):
         detection_data.loc[:,'visible'] += 1 #always visible
         
         if t == 0:
-            tCondition = np.random.uniform(size=detection_data.shape[0]) < p_u2s
+            tCondition = np.random.uniform(size=detection_data.shape[0]) < p_visible 
             detection_data.loc[tCondition,t] = 1
             detection_data.loc[tCondition,'seen'] += 1
             detection_data.loc[~tCondition,'unseen'] += 1
@@ -53,18 +54,19 @@ def simulate_steps(p_s2s,p_u2s,nlitter,tsteps):
 def process_computational_simulation(resultsPath,probDict):
     nlitter = 100
     tsteps = 1000
-    video = 'comp-sim'
+    video = 'comp-sim1'
     for network in probDict.keys():
         print(network)
-        p_s2s,p_u2s = probDict[network]
-        detection_data = simulate_steps(p_s2s,p_u2s,nlitter,tsteps)
-        detection_data.to_csv(resultsPath + video + '/' + video + '-' + network + '/' + network + '-TPandFN.csv')
+        os.makedirs(resultsPath + video + '/' + network + '/',exist_ok=True)
+        p_visible,p_s2s,p_u2s = probDict[network]
+        detection_data = simulate_steps(p_visible,p_s2s,p_u2s,nlitter,tsteps)
+        detection_data.to_csv(resultsPath + video + '/' + network + '/'+ video + '-'  + network + '-TPandFN.csv')
     
 if __name__ == '__main__':
     resultsPath = '../data/computational_simulation/'
-    TPandFN = {'mobilenetSSD-10000-th0p5-nms0p0-iSz124':(0.8268,0.0437),
-               'mobilenetSSD-10000-th0p5-nms0p0-iSz220':(0.8547, 0.0939),
-               'yolov3-tiny-litter_10000-th0p0-nms0p0-iSz128':(0.8320, 0.0073), 
-               'yolov3-tiny-litter_10000-th0p0-nms0p0-iSz224':(0.8319, 0.0186)}
+    TPandFN = {'mobilenetSSD-10000-th0p5-nms0p0-iSz124':(0.2034,0.8268,0.0437),
+               'mobilenetSSD-10000-th0p5-nms0p0-iSz220':(0.3880,0.8547, 0.0939),
+               'yolov3-tiny-litter_10000-th0p0-nms0p0-iSz128':(0.0481,0.8320, 0.0073), 
+               'yolov3-tiny-litter_10000-th0p0-nms0p0-iSz224':(0.1103,0.8319, 0.0186)}
     process_computational_simulation(resultsPath,TPandFN)
 #    detection_data = simulate_steps(0.8547,0.0939,100,100)
