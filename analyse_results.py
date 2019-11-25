@@ -151,7 +151,42 @@ def binned_s2s_uns2uns_data_to_latex(summary_analysis):
 #            print(binName.replace('.csv','.tex'))
             binned_latexDF.to_latex(binName.replace('.csv','.tex'))
                         
+def fine_grain_s2s_uns2uns_data(summary_analysis=None,computational_simulation=None,minT=1,maxT=20):
+    #fine grain analysis/histogram of s2s and uns2uns data to visualize their histograms
+    for csvPattern in ['*s2s_duration.csv', '*uns2uns_duration.csv']:
+        latexDF = None
+        for csvData in glob.glob(summary_analysis + csvPattern):
+            if 'binned' in csvData:#skip binned data
+                continue
+            csvDataDF = pd.read_csv(csvData,header=[0,1],index_col = 0, low_memory = False)
+            csvDataDF = csvDataDF.loc[(minT <= csvDataDF.index) & (csvDataDF.index <= maxT),:]
             
+            csvDataDF.drop(labels=['FreqxSteps','PctFreqxSteps'],axis=1,level=1,inplace=True)
+            for ntwk in csvDataDF.columns.get_level_values(0).unique():
+                print(ntwk)
+                ntwkShort = shorten_network_name(ntwk)
+                if latexDF is None:
+                    latexDF = pd.DataFrame(columns = [ntwkShort], index = csvDataDF.index)
+                else:
+                    latexDF = latexDF.reindex(columns = latexDF.columns.union([ntwkShort]))
+                latexDF.loc[csvDataDF.index,ntwkShort] = \
+                    ['{:.0f} ({:.2f})'.format(d,pctd) for d,pctd in zip(csvDataDF[ntwk]['Frequency'],csvDataDF[ntwk]['PctFreq'])]
+            
+            #output filename
+            fname = csvData.replace('.csv',f'_range{minT}-{maxT}')
+            #save as latex table
+            latexDF.to_latex(fname + '.tex',escape=False)
+            #plot data
+            #rename column names
+            pctFreqDF = csvDataDF.xs('PctFreq',level=1,drop_level=False,axis=1)
+            pctFreqDF.columns = [shorten_network_name(i) for i in pctFreqDF.columns.droplevel(1)]
+            plot_metric_data(pctFreqDF,fname + '.png',ylim=[0,100])
+#            csvDataDF  = csvDataDF.xs(['Frequency','PctFreq'],axis=1,drop_level=False,level=1)
+#            print(csvDataDF.index)
+#            return latexDF
+        
+    
+           
             
 def process_s2s_uns2uns_data(resultsPath,summary_analysis):
     for resultCategory in ['TPandFN','FPdata']:
@@ -208,7 +243,8 @@ def plot_metric_data(df,filename,legend=True,ylim=[0,1]):
     f = plt.figure()
     ax = f.gca()
     df.plot(kind='line',style='-o',legend=False,ax = ax,ylim=ylim)
-    ax.set_xticklabels(np.arange(0,df.shape[0],1))
+#    print(np.arange(0,df.shape[0],1,dtype=np.int))
+    ax.set_xticks(np.arange(1,df.shape[0] + 1,1,dtype=np.int))
     plt.legend(loc='best',ncol=2)
     f.savefig(filename,bbox_inches='tight')
     
@@ -245,6 +281,33 @@ def visualize_summary_csv_data(filename):
         plot_metric_data(metricDF,filename + '-' + metric + '.png')
     
     return df
+def generate_extra_summary_columns(df):
+    df2 = pd.DataFrame()
+    for row in df.index:
+        rowData = df.loc[row,:].dropna()
+        df2.loc[row,'firstState'] = rowData[0]
+        
+        seenData = rowData[rowData == 1]#information about indexes where litter is seen
+        if len(seenData) > 0:
+            firstSeenIdx = seenData.index[0]
+            
+            df2.loc[row,'unseen_uns2s'] = 1
+            totalUnseen_uns = len(rowData[:firstSeenIdx]) - 1
+            df2.loc[row,'unseen_uns2uns'] = totalUnseen_uns - 1 if totalUnseen_uns > 0 else 0 #minus the time-step it was seen
+            
+            #process uns2uns and uns2s for duration that litter has been seen
+            seenData = rowData[firstSeenIdx:]
+#            print(seenData[0])
+#            print(firstSeenIdx,consecutive_occurrences(seenData,0).sum(),rowData)
+            totalUnseen = consecutive_occurrences(seenData,0)
+            
+            df2.loc[row,'seen_uns2uns'] = totalUnseen.sum() - len(totalUnseen) if len(totalUnseen) > 0 else 0
+            df2.loc[row,'seen_uns2s'] = sum(seenData.diff().dropna().astype(np.int) == 1)
+        else:
+            df2.loc[row,'unseen_uns2s'] = 0
+            df2.loc[row,'unseen_uns2uns'] = len(rowData) - 1 if len(rowData) > 0 else 0#was seen the whole time
+     
+    return df2
 
 def summarise_csv_data(resultsPath,resultCategory):
     
@@ -282,8 +345,18 @@ def summarise_csv_data(resultsPath,resultCategory):
                 summaryDF.loc[videoName,(networkName,'nlitter_pruned')] = len(litterIDs)
                 continue
             csvFile = csvFile + '-detection-' + resultCategory + '.csv'
-            csvDF = pd.read_csv(csvFile,index_col=0,header=0).loc[:,'seen2seen':'visible']
+            rawDataDF = pd.read_csv(csvFile,index_col=0,header=0)
             
+            #logged information from raw data
+            csvDF = rawDataDF.loc[:,'seen2seen':'visible']
+            
+            #from raw data extract state (i.e. seen/unseen) for first occurrence in GT, 
+            #seen_uns2s, seen_uns2uns, unseen_uns2s, unseen_uns2uns
+            #DATA
+            #return csvDF,rawDataDF
+            extraDataDF = generate_extra_summary_columns(rawDataDF.drop(labels=csvDF.columns,axis=1))
+            csvDF = pd.concat([extraDataDF,csvDF])
+            summaryCols = list(extraDataDF.columns.values) + summaryCols
             dataHeader = pd.MultiIndex.from_product([[networkName],summaryCols],names=['Network','Data'])
             
             if len(summaryDF.columns) == 0:
@@ -473,7 +546,7 @@ if __name__ == '__main__':
 #    firstAppearanceDF = first_appearance(resultPath)
 #    dataDict = bbox_heatdata(resultPath,summary_analysis,centre=False)
     
-#    TPandFN = summarise_csv_data(resultPath,resultCategory = 'TPandFN')
+    TPandFN = summarise_csv_data(resultPath,resultCategory = 'TPandFN')
     
 #    TPandFN.to_csv(summary_analysis + 'TPandFN.csv')
     

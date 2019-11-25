@@ -20,31 +20,55 @@ def simulate_steps(p_visible,p_s2s,p_u2s,nlitter,tsteps):
         detection_data.loc[:,'visible'] += 1 #always visible
         
         if t == 0:
-            tCondition = np.random.uniform(size=detection_data.shape[0]) < p_visible 
+            tCondition = np.random.uniform(size=detection_data.shape[0]) < p_u2s 
             detection_data.loc[tCondition,t] = 1
             detection_data.loc[tCondition,'seen'] += 1
             detection_data.loc[~tCondition,'unseen'] += 1
         else:
-            for l in detection_data.index:
-                if detection_data.loc[l,t-1] == 0:
-                    if np.random.uniform() < p_u2s:
-                        detection_data.loc[l,t] = 1
-                        detection_data.loc[l,'unseen2seen'] += 1
-                        detection_data.loc[l,'seen'] += 1
-                    else:
-                        detection_data.loc[l,'unseen2unseen'] += 1
-                        detection_data.loc[l,'unseen'] += 1
-                        
-                elif detection_data.loc[l,t-1] == 1:
-                    if np.random.uniform() < p_s2s:
-                        detection_data.loc[l,t] = 1
-                        detection_data.loc[l,'seen2seen'] += 1
-                        detection_data.loc[l,'seen'] += 1
-                    else:
-                        detection_data.loc[l,'seen2unseen'] += 1
-                        detection_data.loc[l,'unseen'] += 1
-                else:
-                    print('This should not happen')
+            #apply condition to total unsRows
+            unsRows = detection_data[t-1] == 0
+            
+            u2sRandom = pd.Series(index = detection_data.index)
+            u2sRandom[:] = np.inf
+            u2sRandom[unsRows] = np.random.uniform(size=unsRows.sum())
+            
+            #update uns2seen transition data
+            detection_data.loc[(u2sRandom < p_u2s) & unsRows, t] = 1
+            detection_data.loc[(u2sRandom < p_u2s) & unsRows, ['unseen2seen','seen']] += 1
+            detection_data.loc[(u2sRandom >= p_u2s) & unsRows, ['unseen2unseen','unseen']] += 1
+            
+            
+            #apply conditions to total seen rows
+            seenRows = detection_data[t-1] == 1 # or not of unsRows
+            s2sRandom = pd.Series(index = detection_data.index)
+            s2sRandom[:] = np.inf
+            s2sRandom[seenRows] = np.random.uniform(size=seenRows.sum())
+            
+            detection_data.loc[(s2sRandom < p_s2s) & seenRows, t] = 1
+            detection_data.loc[(s2sRandom < p_s2s) & seenRows, ['seen2seen','seen']] += 1
+            detection_data.loc[(s2sRandom >= p_s2s) & seenRows, ['seen2unseen','unseen']] += 1
+            
+            
+#            for l in detection_data.index:
+#                if detection_data.loc[l,t-1] == 0:
+#                    if np.random.uniform() < p_u2s:
+#                        detection_data.loc[l,t] = 1
+#                        detection_data.loc[l,'unseen2seen'] += 1
+#                        detection_data.loc[l,'seen'] += 1
+#                    else:
+#                        detection_data.loc[l,'unseen2unseen'] += 1
+#                        detection_data.loc[l,'unseen'] += 1
+#                        
+#                elif detection_data.loc[l,t-1] == 1:
+#                    if np.random.uniform() < p_s2s:
+#                        detection_data.loc[l,t] = 1
+#                        detection_data.loc[l,'seen2seen'] += 1
+#                        detection_data.loc[l,'seen'] += 1
+#                    else:
+#                        detection_data.loc[l,'seen2unseen'] += 1
+#                        detection_data.loc[l,'unseen'] += 1
+#                else:
+#                    print('This should not happen')
     
 #            unseenMask = detection_data[t-1] == 0
 #            unseenCondition = np.random.uniform(size=unseenMask.sum()) < p_u2s
@@ -52,9 +76,9 @@ def simulate_steps(p_visible,p_s2s,p_u2s,nlitter,tsteps):
     print()
     return detection_data
 def process_computational_simulation(resultsPath,probDict):
-    nlitter = 100
-    tsteps = 1000
-    video = 'comp-sim1'
+    nlitter = 1100
+    tsteps = 500
+    video = 'comp-sim2'
     for network in probDict.keys():
         print(network)
         os.makedirs(resultsPath + video + '/' + network + '/',exist_ok=True)
