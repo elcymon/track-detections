@@ -7,6 +7,8 @@ import cv2 as cv
 import matplotlib.pyplot as plt
 import seaborn as sns
 import utils
+import os
+from collections import Counter
 
 def get_detection_metric_data(filename):
     return pd.read_csv(filename,index_col=0)
@@ -153,8 +155,10 @@ def binned_s2s_uns2uns_data_to_latex(summary_analysis):
                         
 def fine_grain_s2s_uns2uns_data(summary_analysis=None,computational_simulation=None,minT=1,maxT=20):
     #fine grain analysis/histogram of s2s and uns2uns data to visualize their histograms
-    for csvPattern in ['*s2s_duration.csv', '*uns2uns_duration.csv']:
+    dataDict = {'s2s':None,'uns2uns':None}
+    for csvPattern in ['/*s2s_duration.csv', '/*uns2uns_duration.csv']:
         latexDF = None
+        dataDF = None
         for csvData in glob.glob(summary_analysis + csvPattern):
             if 'binned' in csvData:#skip binned data
                 continue
@@ -162,15 +166,25 @@ def fine_grain_s2s_uns2uns_data(summary_analysis=None,computational_simulation=N
             csvDataDF = csvDataDF.loc[(minT <= csvDataDF.index) & (csvDataDF.index <= maxT),:]
             
             csvDataDF.drop(labels=['FreqxSteps','PctFreqxSteps'],axis=1,level=1,inplace=True)
+#            print(csvDataDF)
             for ntwk in csvDataDF.columns.get_level_values(0).unique():
                 print(ntwk)
                 ntwkShort = shorten_network_name(ntwk)
                 if latexDF is None:
                     latexDF = pd.DataFrame(columns = [ntwkShort], index = csvDataDF.index)
+                    dataDF = pd.DataFrame(columns = [ntwkShort], index = csvDataDF.index)
                 else:
                     latexDF = latexDF.reindex(columns = latexDF.columns.union([ntwkShort]))
+                    latexDF = latexDF.reindex(index = latexDF.index.union(csvDataDF.index))
+                    
+                    dataDF = dataDF.reindex(columns = dataDF.columns.union([ntwkShort]))
+                    dataDF = dataDF.reindex(index = dataDF.index.union(csvDataDF.index))
+#                    latexDF = latexDF.join(pd.DataFrame(columns=[ntwkShort],index = csvDataDF.index))
+#                print(latexDF.index,csvDataDF.index)
+                dataDF.loc[csvDataDF.index,ntwkShort] = csvDataDF[ntwk]['PctFreq']
                 latexDF.loc[csvDataDF.index,ntwkShort] = \
                     ['{:.0f} ({:.2f})'.format(d,pctd) for d,pctd in zip(csvDataDF[ntwk]['Frequency'],csvDataDF[ntwk]['PctFreq'])]
+    
             
             #output filename
             fname = csvData.replace('.csv',f'_range{minT}-{maxT}')
@@ -181,15 +195,47 @@ def fine_grain_s2s_uns2uns_data(summary_analysis=None,computational_simulation=N
             pctFreqDF = csvDataDF.xs('PctFreq',level=1,drop_level=False,axis=1)
             pctFreqDF.columns = [shorten_network_name(i) for i in pctFreqDF.columns.droplevel(1)]
             plot_metric_data(pctFreqDF,fname + '.png',ylim=[0,100])
-#            csvDataDF  = csvDataDF.xs(['Frequency','PctFreq'],axis=1,drop_level=False,level=1)
+            
+#            print(csvData)
+            if 'TPandFN' in csvData:
+#                print(dataDF)
+                if 's2s' in csvPattern:
+                    dataDict['s2s'] = dataDF
+                else:
+                    dataDict['uns2uns'] = dataDF
+    return dataDict
+    #            csvDataDF  = csvDataDF.xs(['Frequency','PctFreq'],axis=1,drop_level=False,level=1)
 #            print(csvDataDF.index)
 #            return latexDF
         
+def compare_fine_grain(experiments,comp_model,outputFolder,compCSV=None):
+    experimentDict = fine_grain_s2s_uns2uns_data(experiments)
+    comp_modelDict = fine_grain_s2s_uns2uns_data(comp_model)
+#    print(experimentDict.shape,comp_modelDict.shape)
+    dataHeader = pd.MultiIndex.from_product([experimentDict['s2s'].columns,['Experiment','Comp_Model']])
     
+#    return experimentDict,comp_modelDict
+    for category in experimentDict.keys():
+        print(category)
+        dfData = pd.DataFrame(columns = dataHeader)
+        fname = outputFolder + '/compare-' + ntpath.basename(experiments) + '-and-' + \
+                    ntpath.basename(comp_model) + '-' + category
+        for col in experimentDict['s2s'].columns:
+            print('\t',col)
+             
+                    
+            dfData[(col,'Experiment')] = experimentDict[category][col]
+            dfData[(col,'Comp_Model')] = comp_modelDict[category][col]
+            
+            plot_metric_data(dfData[col],fname + '-' + col + '.png',ylim=[0,50],xlabel='Number of Frames',ylabel='Percentage')
+        dfData.to_csv(fname + '.csv')
+        dfData.to_latex(fname + '.tex',escape=False)
+    
+            
            
             
-def process_s2s_uns2uns_data(resultsPath,summary_analysis):
-    for resultCategory in ['TPandFN','FPdata']:
+def process_s2s_uns2uns_data(resultsPath,summary_analysis,categories=['TPandFN','FPdata']):
+    for resultCategory in categories:
         print(resultCategory)
         s2s_duration,uns2uns_duration = process_consecutive_occurrences(resultsPath,resultCategory)
         s2s_duration = update_duration_columns(s2s_duration)
@@ -235,23 +281,31 @@ def shorten_network_name(networkName):
         ntwk = 'yolov3-tiny-'
     elif 'yolov3-litter' in networkName:
         ntwk = 'yolov3-'
+    else:
+        return networkName
     
     ntwk += networkName.replace('iSz','').split('-')[-1]
     return ntwk
 
-def plot_metric_data(df,filename,legend=True,ylim=[0,1]):
+def plot_metric_data(df,filename,legend=True,ylim=[0,1],ylabel=None,xlabel=None):
     f = plt.figure()
     ax = f.gca()
     df.plot(kind='line',style='-o',legend=False,ax = ax,ylim=ylim)
 #    print(np.arange(0,df.shape[0],1,dtype=np.int))
     ax.set_xticks(np.arange(1,df.shape[0] + 1,1,dtype=np.int))
     plt.legend(loc='best',ncol=2)
+    if ylabel is not None:
+        plt.ylabel(ylabel)
+    if xlabel is not None:
+        plt.xlabel(xlabel)
+        
     f.savefig(filename,bbox_inches='tight')
     
 def summary_csv_data_to_latex(filename):
     df = pd.read_csv(filename + '.csv',header=[0,1],index_col=0)
-    metricSUM = ['visible','seen','unseen','seen2seen','seen2unseen','unseen2seen','unseen2unseen']
-    metricMean = ['P_visible','P_s2s','P_u2s']
+    metricSUM = ['visible','seen','unseen','seen2seen','seen2unseen',\
+                 'unseen2seen','unseen2unseen','firstState','nlitter']
+    metricMean = ['P_visible','P_s2s','P_u2s','P_s_u2s','P_uns_u2s']
     latexDF = pd.DataFrame(index= metricSUM + metricMean)
     for network in df.columns.get_level_values(0).unique():
         if '608' in network:
@@ -275,14 +329,14 @@ def visualize_summary_csv_data(filename):
         plot_metric_data(unique_litterDF,filename + 'nlitter.png',ylim=[0,unique_litterDF.max().max() * 1.1])
         print(unique_litterDF.sum())
         
-    for metric in ['P_s2s','P_u2s','P_visible']:
+    for metric in ['P_s_u2s','P_uns_u2s','P_s2s','P_u2s','P_visible']:
         metricDF = df.xs(metric,level=1,drop_level=False,axis=1)
         metricDF.columns = [shorten_network_name(i) for i in metricDF.columns.droplevel(1)]
         plot_metric_data(metricDF,filename + '-' + metric + '.png')
     
-    return df
+#    return df
 def generate_extra_summary_columns(df):
-    df2 = pd.DataFrame()
+    df2 = pd.DataFrame(columns=['firstState','unseen_uns2s','unseen_uns2uns','seen_uns2uns','seen_uns2s'])
     for row in df.index:
         rowData = df.loc[row,:].dropna()
         df2.loc[row,'firstState'] = rowData[0]
@@ -291,7 +345,7 @@ def generate_extra_summary_columns(df):
         if len(seenData) > 0:
             firstSeenIdx = seenData.index[0]
             
-            df2.loc[row,'unseen_uns2s'] = 1
+            df2.loc[row,'unseen_uns2s'] = 1 if df2.loc[row,'firstState'] == 0 else 0
             totalUnseen_uns = len(rowData[:firstSeenIdx]) - 1
             df2.loc[row,'unseen_uns2uns'] = totalUnseen_uns - 1 if totalUnseen_uns > 0 else 0 #minus the time-step it was seen
             
@@ -304,17 +358,20 @@ def generate_extra_summary_columns(df):
             df2.loc[row,'seen_uns2uns'] = totalUnseen.sum() - len(totalUnseen) if len(totalUnseen) > 0 else 0
             df2.loc[row,'seen_uns2s'] = sum(seenData.diff().dropna().astype(np.int) == 1)
         else:
+            df2.loc[row,'seen_uns2uns'] = 0
+            df2.loc[row,'seen_uns2s'] = 0
             df2.loc[row,'unseen_uns2s'] = 0
             df2.loc[row,'unseen_uns2uns'] = len(rowData) - 1 if len(rowData) > 0 else 0#was seen the whole time
      
     return df2
 
-def summarise_csv_data(resultsPath,resultCategory):
+def summarise_csv_data(resultsPath,resultCategory,visible_threshold=1):
     
     summaryDF = pd.DataFrame()
     summaryCols = ['seen2seen','seen2unseen','P_s2s',\
                 'unseen2seen','unseen2unseen','P_u2s',\
                 'seen','unseen','visible','P_visible']
+    visibleData = None
     for videoFolder in glob.glob(resultsPath + '*'):
         videoName = ntpath.basename(videoFolder)
         print(videoName,videoFolder)
@@ -347,16 +404,19 @@ def summarise_csv_data(resultsPath,resultCategory):
             csvFile = csvFile + '-detection-' + resultCategory + '.csv'
             rawDataDF = pd.read_csv(csvFile,index_col=0,header=0)
             
+            rawDataDF = rawDataDF.loc[rawDataDF['visible'] >= visible_threshold,:]#drop rows that are below threshold
+            
             #logged information from raw data
             csvDF = rawDataDF.loc[:,'seen2seen':'visible']
-            
+#            return csvDF,rawDataDF
             #from raw data extract state (i.e. seen/unseen) for first occurrence in GT, 
             #seen_uns2s, seen_uns2uns, unseen_uns2s, unseen_uns2uns
             #DATA
             #return csvDF,rawDataDF
             extraDataDF = generate_extra_summary_columns(rawDataDF.drop(labels=csvDF.columns,axis=1))
-            csvDF = pd.concat([extraDataDF,csvDF])
-            summaryCols = list(extraDataDF.columns.values) + summaryCols
+            csvDF = extraDataDF.join(csvDF)
+            
+            summaryCols = ['nlitter'] + list(extraDataDF.columns.values) + ['P_s_u2s','P_uns_u2s'] + summaryCols
             dataHeader = pd.MultiIndex.from_product([[networkName],summaryCols],names=['Network','Data'])
             
             if len(summaryDF.columns) == 0:
@@ -373,17 +433,35 @@ def summarise_csv_data(resultsPath,resultCategory):
 #            print(summaryDF)
 #            return summaryDF
             csvDFsummary = csvDF.sum()
+            csvDFsummary['nlitter'] = rawDataDF.shape[0]#number of rows is number of unique litter
+            
+            #old metrics data
             csvDFsummary['P_s2s'] = \
                 csvDFsummary['seen2seen'] / (csvDFsummary['seen2seen'] + csvDFsummary['seen2unseen'])
             csvDFsummary['P_u2s'] = \
                 csvDFsummary['unseen2seen'] / (csvDFsummary['unseen2seen'] + csvDFsummary['unseen2unseen'])
             csvDFsummary['P_visible'] = \
                 csvDFsummary['seen'] / (csvDFsummary['visible'])
+            
+            #extra_data metrics data
+            if 'seen_uns2s' not in csvDFsummary.index:
+                
+                return csvDFsummary
+            csvDFsummary['P_s_u2s'] = \
+                csvDFsummary['seen_uns2s'] / (csvDFsummary['seen_uns2s'] + csvDFsummary['seen_uns2uns'])
+            csvDFsummary['P_uns_u2s'] = \
+                csvDFsummary['unseen_uns2s'] / (csvDFsummary['unseen_uns2s'] + csvDFsummary['unseen_uns2uns'])
+            
             summaryDF.loc[videoName,dataHeader] = csvDFsummary.loc[summaryCols].values
 #            summaryDF.merge(csvDF.sum(),how='left',on=videoName,left_on=networkName)
 #            csvDF = csvDF
 #            return csvDF
-    return summaryDF
+#        print(f"nlitter {len(rawDataDF['visible'].values)}")
+        if visibleData is None:
+            visibleData = list(rawDataDF['visible'].values)
+        else:
+            visibleData = visibleData + list(rawDataDF['visible'].values)
+    return summaryDF,visibleData
 
 def close2frame_border_mask(fwidth,fheight,edgewidth,horizon):
     center,radius,start_angle,end_angle = utils.findCircle(*horizon)
@@ -533,7 +611,90 @@ def bbox_heatdata(resultsPath,summary_analysis,
         dataDict['FN'].to_csv(box_centresDF_csv + '-FN.csv')
         heatmap(dataDict['FN'],box_centresDF_csv + '-FN.png',heatMax)
 #    return dataDict
+def add_metrics_data(columns,df):
+    metricsData = pd.DataFrame(columns = columns)
+    for litter in df.index:
+        rowData = df.loc[litter,:].dropna()
+        metricsData.loc[litter,'visible'] = len(rowData)
+        metricsData.loc[litter,'seen'] = sum(rowData == 1)
+        metricsData.loc[litter,'unseen'] = sum(rowData == 0)
+        
+        seenFreqs = consecutive_occurrences(rowData,1)
+        metricsData.loc[litter,'seen2seen'] = seenFreqs.sum() - len(seenFreqs) if len(seenFreqs) > 0 else 0
+        
+        unseenFreqs = consecutive_occurrences(rowData,0)
+        metricsData.loc[litter,'unseen2unseen'] = unseenFreqs.sum() - len(unseenFreqs) if len(unseenFreqs) > 0 else 0
+        
+        stateChange = rowData.diff().dropna().astype(np.int)
+        metricsData.loc[litter,'seen2unseen'] = sum(stateChange == -1) #change from seen (1) to unseen (0) i.e. 0 - 1 = -1
+        metricsData.loc[litter,'unseen2seen'] = sum(stateChange == 1) #change from unseen (0) to seen (1) i.e. 1 - 0 = 1
+    
+    return metricsData.join(df)
+        
+        
+def resample_experiment_data(resultsPath,rate,framerate=50):
+    processingTime = int(np.ceil(framerate / float(rate)))
+    
+    if resultsPath[-1] == '/':
+        resultsPath = resultsPath[:-1]
+    outputPath = f'{resultsPath}-{rate}Hz/{ntpath.basename(resultsPath)}'
+    for videoFolder in glob.glob(resultsPath + '/*'):
+        videoName = ntpath.basename(videoFolder)
+        print(videoName)
+        for networkFolder in glob.glob(videoFolder + '/*'):
+            networkName = ntpath.basename(networkFolder)
+            
+            if '608' in networkName:#ignore ground truth data/folder
+                continue
+            for resultCategory in ['TPandFN','FPdata']:
+                print(f'\t{networkName}')
+                
+                csvFile = videoName + '-' + networkName + '-detection-' + resultCategory + '.csv'
+                rawDataDF = pd.read_csv(f'{networkFolder}/{csvFile}',index_col=0,header=0)
+#                print(rawDataDF.columns)
+                cols2drop = rawDataDF.loc[:,'seen2seen':'visible'].columns
+                rawDataDF.drop(labels=cols2drop, axis=1,inplace=True)
+                frames = rawDataDF.columns.astype(int) % processingTime == 0
+                os.makedirs(f'{outputPath}/{videoName}/{networkName}/' ,exist_ok=True)
+                filteredDF = add_metrics_data(cols2drop,rawDataDF.loc[:,frames])
+                filteredDF.to_csv(f'{outputPath}/{videoName}/{networkName}/{csvFile}' )
+#                return filteredDF
+def analyse_resultPath_and_summarize(resultPath,summaryPath,visible_threshold=1):
+    for resultCategory in ['TPandFN','FPdata']:
+        summaryDF,visibleData = summarise_csv_data(resultPath,resultCategory=resultCategory,visible_threshold=visible_threshold)
+        summaryDF.to_csv(f'{summaryPath}/{resultCategory}_metrics_data.csv')
+        visibleData.sort()
+        if resultCategory == 'TPandFN':
+            visibleDataDF = pd.DataFrame(Counter(visibleData),index=['Frequency']).T
+        
+            visibleDataDF.to_csv(f'{summaryPath}/{resultCategory}_visibleData.csv')
+        summary_csv_data_to_latex(f'{summaryPath}/{resultCategory}_metrics_data')
+        process_s2s_uns2uns_data(resultPath,f'{summaryPath}/',categories=[resultCategory])
+        fine_grain_s2s_uns2uns_data(summary_analysis=f'{summaryPath}/')
+def generate_plot_for_visibleData(summary_analysis):
+    for f in glob.glob(summary_analysis + '*_visibleData.csv'):
+        fig = plt.figure()
+        ax = fig.gca()
+        df = pd.read_csv(f,index_col=0)
+#        df['Frequency'].plot()
+        df['% of litter'] = df['Frequency'] / df['Frequency'].sum() * 100
+        
+        df['Cummulative Sum'] = df['% of litter'].cumsum()
+        df['Cummulative Sum'].plot(kind='line',style='o',legend=False,ax=ax)
+        df['% of litter'].plot(kind='line',style='*',legend=False,ax=ax,secondary_y=True)
+        
+        plt.legend([ax.get_lines()[0], ax.right_ax.get_lines()[0]],['Cummulative Sum', '% of litter'],loc='center right')
+        ax.set_ylabel('Cummulative Sum of %',fontweight='bold')
+        ax.right_ax.set_ylabel('% of litter',fontweight='bold')
+        ax.set_xlabel('Number of frames',fontweight='bold')
+        
+        ax.set_xlim(left=df.index.min())
+        ax.grid(True)
+#        plt.legend(loc='center right')
+#        plt.ylabel('Cummulative Percentage')
+        fig.savefig(f.replace('.csv','.png'),bbox_inches='tight')
 
+        
 if __name__ == '__main__':
     resultPath = '../data/model_data/'
     videosPath = '../data/mp4/'
@@ -546,7 +707,11 @@ if __name__ == '__main__':
 #    firstAppearanceDF = first_appearance(resultPath)
 #    dataDict = bbox_heatdata(resultPath,summary_analysis,centre=False)
     
-    TPandFN = summarise_csv_data(resultPath,resultCategory = 'TPandFN')
+#    TPandFN = summarise_csv_data(resultPath,resultCategory = 'TPandFN')
     
 #    TPandFN.to_csv(summary_analysis + 'TPandFN.csv')
+    experiments = '../data/summary_analysis'
+    comp_model = '../data/computational_simulation/comp-sim-100k'
+    compare_fine_grain(experiments,comp_model,'../data/summary_analysis')
+#    generate_plot_for_visibleData(experiments + '/')
     
