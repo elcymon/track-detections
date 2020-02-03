@@ -426,7 +426,9 @@ def generate_extra_summary_columns(df):
     return df2
 
 def summarise_csv_data(resultsPath,resultCategory,visible_threshold=1):
-    
+    '''
+    Analyse litters data based on video names
+    '''
     summaryDF = pd.DataFrame()
     summaryCols = ['seen2seen','seen2unseen','P_s2s',\
                 'unseen2seen','unseen2unseen','P_u2s',\
@@ -528,6 +530,55 @@ def summarise_csv_data(resultsPath,resultCategory,visible_threshold=1):
             visibleData = visibleData + list(rawDataDF['visible'].values)
     return summaryDF,visibleData
 
+def summarise_csv_data_litters(resultsPath,resultCategory,visible_threshold=1):
+    '''
+    Analyse litters data based on each litter
+    '''
+    summaryDF = None#pd.DataFrame()
+#    summaryCols = ['seen2seen','seen2unseen','P_s2s',\
+#                'unseen2seen','unseen2unseen','P_u2s',\
+#                'seen','unseen','visible','P_visible']
+#    visibleData = None
+    for videoFolder in glob.glob(resultsPath + '*'):
+        videoName = ntpath.basename(videoFolder)
+        print(videoName,videoFolder)
+        for networkFolder in glob.glob(videoFolder + '/*'):
+            networkName = ntpath.basename(networkFolder)
+            print(networkName)
+            csvFile = networkFolder + '/' + videoName + '-' + networkName
+            if '608' in networkName:
+                continue
+            csvFile = csvFile + '-detection-' + resultCategory + '.csv'
+            rawDataDF = get_detection_metric_data(csvFile,visible_threshold=visible_threshold)
+            csvDF = rawDataDF.loc[:,'seen2seen':'visible']
+            
+#            extraDataDF = generate_extra_summary_columns(rawDataDF.drop(labels=csvDF.columns,axis=1))
+#            csvDF = extraDataDF.join(csvDF)
+            csvDF.loc[:,'P_s2s'] = csvDF['seen2seen'] / (csvDF['seen2seen'] + csvDF['seen2unseen'])
+            csvDF.loc[:,'P_u2s'] = csvDF['unseen2seen'] / (csvDF['unseen2seen'] + csvDF['unseen2unseen'])
+            csvDF.loc[:,'P_visible'] = csvDF['seen'] / csvDF['visible']
+            if summaryDF is None:
+                summaryDF = pd.DataFrame(index = pd.MultiIndex.from_product([[videoName],csvDF.index.values]),
+                                       columns = pd.MultiIndex.from_product([[networkName],csvDF.columns.values]))
+                summaryDF.loc[videoName,networkName].update(csvDF)
+            else:
+                newindex = pd.MultiIndex.from_product([[videoName],csvDF.index.values])
+                newcolumns = pd.MultiIndex.from_product([[networkName],csvDF.columns.values])
+                newDF = pd.DataFrame(index=newindex,columns=newcolumns)
+                newDF.loc[videoName,networkName].update(csvDF)
+                if videoName in summaryDF.index.get_level_values(0):
+                    summaryDF = summaryDF.reindex(columns = summaryDF.columns.union(newcolumns))
+#                    summaryDF = pd.concat([summaryDF,newDF],axis=1,join='inner')
+                    summaryDF = summaryDF.combine_first(newDF)
+                else:
+                    summaryDF = summaryDF.reindex(index = summaryDF.index.union(newindex))
+                    summaryDF = summaryDF.combine_first(newDF)
+#                    summaryDF = summaryDF.append(newDF)
+                    
+#                summaryDF
+
+    return summaryDF
+            
 def close2frame_border_mask(fwidth,fheight,edgewidth,horizon):
     center,radius,start_angle,end_angle = utils.findCircle(*horizon)
     maskDF = pd.DataFrame(index=np.arange(1,fheight+1,1,dtype=np.int),
@@ -749,7 +800,71 @@ def analyse_resultPath_and_summarize(resultPath,summaryPath,visible_threshold=1)
     
     fine_grain_s2s_uns2uns_data(summary_analysis=f'{summaryPath}/')
     generate_plot_for_visibleData(f'{summaryPath}/')
+def metrics_data_breakdown(break_down,col,metric_name,df,step=0.1):
+    start = 0
+    count = df.loc[(df[metric_name] == 0) | df[metric_name].isna(),metric_name].shape[0]
+    pct = float(count) / df.shape[0] * 100
+    break_down.loc[str(0),col] = f'{count} ({pct:02.2f}\%)'
+    while start < 1:
+        stop = round(start + step,1)
+        if stop < 1:
+            count = df.loc[(df[metric_name] > start) & (df[metric_name] <= (stop)),metric_name].shape[0]
+            pct = float(count) / df.shape[0] * 100
+            break_down.loc[f'{start}>i<={stop}',col] = f'{count} ({pct:02.2f}\%)'
+        else:
+            count = df.loc[(df[metric_name] > start) & (df[metric_name] < (stop)),metric_name].shape[0]
+            pct = float(count) / df.shape[0] * 100
+            break_down.loc[f'{start}>i<{stop}',col] = f'{count} ({pct:02.2f}\%)'
+        start = stop
+    count = df.loc[df[metric_name] == 1,metric_name].shape[0]
+    pct = float(count) / df.shape[0] * 100
+    break_down.loc[str(1),col] = f'{count} ({pct:02.2f}\%)'
+    
+    return break_down
+def analyse_litters_summary_data(resultPath,summaryPath,visible_threshold=1):
+    summaryPath = f'{summaryPath}-ge_threshold-{visible_threshold}'
+    print(summaryPath)
+    os.makedirs(summaryPath,exist_ok=True)
+    for resultCategory in ['TPandFN']:
+        summaryDF = summarise_csv_data_litters(resultPath,resultCategory,visible_threshold)
+        if summaryDF is None:
+            summaryDF = pd.read_csv(f'{summaryPath}/{resultCategory}_metrics_data.csv',index_col=[0,1],header=[0,1])
+#            return summaryDF
+#            print(summaryDF.shape)
+        else:
+            summaryDF.to_csv(f'{summaryPath}/{resultCategory}_metrics_data.csv')
+        tex_rows = summaryDF.columns.get_level_values(1).unique()
+        tex_df = pd.DataFrame(index=tex_rows)
+        s2s_breakdown = pd.DataFrame()
+        u2s_breakdown = pd.DataFrame()
         
+        for col in summaryDF.columns.get_level_values(0).unique():
+            summaryCol = summaryDF[col]
+            col = shorten_network_name(col)
+            for row in tex_rows:
+                if 'P_' in row:
+                    tex_df.loc[row,col] = f'${summaryCol[row].mean():.4f} \pm {summaryCol[row].std():.4f}$'
+                else:
+                    tex_df.loc[row,col] = f'{int(summaryCol[row].sum())}'
+            #get extra information
+            never_seen = summaryCol.loc[summaryCol['seen'] == 0,'seen'].shape[0]
+            tex_df.loc['never_seen',col] = f'{never_seen}'
+            
+            always_seen = summaryCol.loc[summaryCol['P_visible'] >= 1,'P_visible'].shape[0]
+            tex_df.loc['always_seen',col] = f'{always_seen}'
+            
+            tex_df.loc['nlitter',col] = summaryCol['visible'].count()
+            
+            #modelling data breakdown
+            s2s_breakdown = metrics_data_breakdown(s2s_breakdown,col,'P_s2s',summaryCol)
+            u2s_breakdown = metrics_data_breakdown(u2s_breakdown,col,'P_u2s',summaryCol)
+            
+            #save analysis data
+            tex_df.to_latex(f'{summaryPath}/{resultCategory}_metrics_data.tex',escape=False)
+            s2s_breakdown.to_latex(f'{summaryPath}/{resultCategory}_s2s_breakdown.tex',escape=False)
+            u2s_breakdown.to_latex(f'{summaryPath}/{resultCategory}_u2s_breakdown.tex',escape=False)
+        return tex_df,s2s_breakdown,u2s_breakdown
+#        summary_csv_data_to_latex(f'{summaryPath}/{resultCategory}_metrics_data')
 def generate_plot_for_visibleData(summary_analysis):
     for f in glob.glob(summary_analysis + '*_visibleData.csv'):
         fig = plt.figure()
