@@ -24,7 +24,15 @@ def simulate_steps(prob_s2s,prob_u2s,mode,nlitter,tsteps):
     elif mode == 'mean':
         p_s2s = prob_s2s[0]
         p_u2s = prob_u2s[0]
-    elif mode != 'norm':
+    elif mode == 'norm':
+        p_u2s_list = np.random.normal(prob_u2s[0],prob_u2s[1],size=detection_data.shape[0])
+        p_u2s_list[p_u2s_list > 1] = 1
+        p_u2s_list[p_u2s_list < 0] = 0
+        
+        p_s2s_list = np.random.normal(prob_s2s[0],prob_s2s[1],size=detection_data.shape[0])
+        p_s2s_list[p_s2s_list > 1] = 1
+        p_s2s_list[p_s2s_list < 0] = 0
+    else:
         print('Unknown Mode',mode)
         exit(1)
     for t in range(tsteps):
@@ -34,9 +42,7 @@ def simulate_steps(prob_s2s,prob_u2s,mode,nlitter,tsteps):
         
         if t == 0:
             if mode == 'norm':
-                p_u2s = np.random.normal(prob_u2s[0],prob_u2s[1],size=detection_data.shape[0])
-                p_u2s[p_u2s > 1] = 1
-                p_u2s[p_u2s < 0] = 0
+                p_u2s = p_u2s_list
             
             tCondition = np.random.uniform(size=detection_data.shape[0]) < p_u2s 
             detection_data.loc[tCondition,t] = 1
@@ -72,10 +78,7 @@ def simulate_steps(prob_s2s,prob_u2s,mode,nlitter,tsteps):
             if mode == 'norm':
                 p_u2s = pd.Series(index = detection_data.index)
                 p_u2s[:] = np.inf
-                p = np.random.normal(prob_u2s[0],prob_u2s[1],size=unsRows.sum())
-                p[p > 1] = 1
-                p[p < 0] = 0
-                p_u2s[unsRows] = p
+                p_u2s[unsRows] = p_u2s_list[unsRows]
                 
             #update uns2seen transition data
             
@@ -94,10 +97,7 @@ def simulate_steps(prob_s2s,prob_u2s,mode,nlitter,tsteps):
             if mode == 'norm':
                 p_s2s = pd.Series(index = detection_data.index)
                 p_s2s[:] = np.inf
-                p = np.random.normal(prob_s2s[0],prob_s2s[1],size=seenRows.sum())
-                p[p > 1] = 1
-                p[p < 0] = 0
-                p_s2s[seenRows] = p
+                p_s2s[seenRows] = p_s2s_list[seenRows]
                 
             detection_data.loc[(s2sRandom < p_s2s) & seenRows, t] = 1
             detection_data.loc[(s2sRandom < p_s2s) & seenRows, ['seen2seen','seen']] += 1
@@ -120,25 +120,45 @@ def process_computational_simulation(resultsPath,probDict,experiment,video,mode=
     
 if __name__ == '__main__':
     resultsPath = '../data/computational_simulation/'
-    TPandFN = {'mobilenetSSD-10000-th0p5-nms0p0-iSz124':((0.8302,0.0395),(0.0539,0.0155)),
-               'mobilenetSSD-10000-th0p5-nms0p0-iSz220':((0.8622,0.0282),(0.1134,0.0270)),
-               'yolov3-tiny-litter_10000-th0p0-nms0p0-iSz128':((0.8323,0.0574),(0.0090,0.0050)), 
-               'yolov3-tiny-litter_10000-th0p0-nms0p0-iSz224':((0.8331,0.0517),(0.0226,0.0126))}
+#    TPandFN = {'mobilenetSSD-10000-th0p5-nms0p0-iSz124':((0.8302,0.0395),(0.0539,0.0155)),
+#               'mobilenetSSD-10000-th0p5-nms0p0-iSz220':((0.8622,0.0282),(0.1134,0.0270)),
+#               'yolov3-tiny-litter_10000-th0p0-nms0p0-iSz128':((0.8323,0.0574),(0.0090,0.0050)), 
+#               'yolov3-tiny-litter_10000-th0p0-nms0p0-iSz224':((0.8331,0.0517),(0.0226,0.0126))}
+#    
+#    TPandFN_1hz = {'mobilenetSSD-10000-th0p5-nms0p0-iSz124':((0.7303,0.098),(0.2166 ,0.0684)),
+#               'mobilenetSSD-10000-th0p5-nms0p0-iSz220':((0.7710,0.0796),(0.3643,0.1111)),
+#               'yolov3-tiny-litter_10000-th0p0-nms0p0-iSz128':((0.5899,0.2607),(0.0623,0.0356)), 
+#               'yolov3-tiny-litter_10000-th0p0-nms0p0-iSz224':((0.5954 ,0.2371),(0.1035,0.0613))}
+#    
+#    TPandFN_4hz = {'mobilenetSSD-10000-th0p5-nms0p0-iSz124':((0.7031,0.0608),(0.1200,0.0465)),
+#               'mobilenetSSD-10000-th0p5-nms0p0-iSz220':((0.7477,0.0438),(0.2473,0.0812)),
+#               'yolov3-tiny-litter_10000-th0p0-nms0p0-iSz128':((0.5898,0.1119),(0.0282,0.0181)), 
+#               'yolov3-tiny-litter_10000-th0p0-nms0p0-iSz224':((0.6357,0.0989),(0.0602,0.0397))}
+#    
+#    TPandFN_40hz =  {'mobilenetSSD-10000-th0p5-nms0p0-iSz124':((0.8206,0.0387),(0.0576,0.0173)),
+#               'mobilenetSSD-10000-th0p5-nms0p0-iSz220':((0.8517,0.0289),(0.1227,0.0306)),
+#               'yolov3-tiny-litter_10000-th0p0-nms0p0-iSz128':((0.8138,0.0651),(0.0099,0.0054)), 
+#               'yolov3-tiny-litter_10000-th0p0-nms0p0-iSz224':((0.8188,0.0548),(0.0249,0.0143))}
     
-    TPandFN_1hz = {'mobilenetSSD-10000-th0p5-nms0p0-iSz124':((0.7303,0.098),(0.2166 ,0.0684)),
-               'mobilenetSSD-10000-th0p5-nms0p0-iSz220':((0.7710,0.0796),(0.3643,0.1111)),
-               'yolov3-tiny-litter_10000-th0p0-nms0p0-iSz128':((0.5899,0.2607),(0.0623,0.0356)), 
-               'yolov3-tiny-litter_10000-th0p0-nms0p0-iSz224':((0.5954 ,0.2371),(0.1035,0.0613))}
+    TPandFN = {'mobilenetSSD-10000-th0p5-nms0p0-iSz124':((0.6784,0.2791),(0.0696,0.0998)),
+               'mobilenetSSD-10000-th0p5-nms0p0-iSz220':((0.7361,0.2577),(0.1696,0.1687)),
+               'yolov3-tiny-litter_10000-th0p0-nms0p0-iSz128':((0.6638,0.2952),(0.0095,0.0263)), 
+               'yolov3-tiny-litter_10000-th0p0-nms0p0-iSz224':((0.6656,0.2793),(0.0292,0.0610))}
     
-    TPandFN_4hz = {'mobilenetSSD-10000-th0p5-nms0p0-iSz124':((0.7031,0.0608),(0.1200,0.0465)),
-               'mobilenetSSD-10000-th0p5-nms0p0-iSz220':((0.7477,0.0438),(0.2473,0.0812)),
-               'yolov3-tiny-litter_10000-th0p0-nms0p0-iSz128':((0.5898,0.1119),(0.0282,0.0181)), 
-               'yolov3-tiny-litter_10000-th0p0-nms0p0-iSz224':((0.6357,0.0989),(0.0602,0.0397))}
+    TPandFN_1hz = {'mobilenetSSD-10000-th0p5-nms0p0-iSz124':((0.6499,0.4278),(0.2405 ,0.3476)),
+               'mobilenetSSD-10000-th0p5-nms0p0-iSz220':((0.7121,0.3815),(0.4158,0.4239)),
+               'yolov3-tiny-litter_10000-th0p0-nms0p0-iSz128':((0.5355,0.4549),(0.0670,0.1927)), 
+               'yolov3-tiny-litter_10000-th0p0-nms0p0-iSz224':((0.5248 ,0.4356),(0.1149,0.2565))}
     
-    TPandFN_40hz =  {'mobilenetSSD-10000-th0p5-nms0p0-iSz124':((0.8206,0.0387),(0.0576,0.0173)),
-               'mobilenetSSD-10000-th0p5-nms0p0-iSz220':((0.8517,0.0289),(0.1227,0.0306)),
-               'yolov3-tiny-litter_10000-th0p0-nms0p0-iSz128':((0.8138,0.0651),(0.0099,0.0054)), 
-               'yolov3-tiny-litter_10000-th0p0-nms0p0-iSz224':((0.8188,0.0548),(0.0249,0.0143))}
+    TPandFN_4hz = {'mobilenetSSD-10000-th0p5-nms0p0-iSz124':((0.5651,0.3312),(0.1591 ,0.2439)),
+               'mobilenetSSD-10000-th0p5-nms0p0-iSz220':((0.6385,0.3061),(0.3473,0.3496)),
+               'yolov3-tiny-litter_10000-th0p0-nms0p0-iSz128':((0.4545,0.3614),(0.0302,0.0926)), 
+               'yolov3-tiny-litter_10000-th0p0-nms0p0-iSz224':((0.4737 ,0.3656),(0.0783,0.1770))}
+    
+    TPandFN_40hz =  {'mobilenetSSD-10000-th0p5-nms0p0-iSz124':((0.6676,0.2820),(0.0750 ,0.1087)),
+               'mobilenetSSD-10000-th0p5-nms0p0-iSz220':((0.7259,0.2578),(0.1841,0.1842)),
+               'yolov3-tiny-litter_10000-th0p0-nms0p0-iSz128':((0.6437,0.3026),(0.0105,0.0299)), 
+               'yolov3-tiny-litter_10000-th0p0-nms0p0-iSz224':((0.6470 ,0.2830),(0.0327,0.0714))}
     mode = 'norm'
-    process_computational_simulation(resultsPath,TPandFN_1hz,f'comp-sim-ge50-{mode}-1fps-100k','comp-sim',mode=mode)
+    process_computational_simulation(resultsPath,TPandFN,f'v2litters-comp-sim-ge50-{mode}-50fps-100k','comp-sim',mode=mode)
 #    detection_data = simulate_steps(0.8547,0.0939,100,100)
