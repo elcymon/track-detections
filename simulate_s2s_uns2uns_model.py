@@ -117,7 +117,18 @@ def process_computational_simulation(resultsPath,probDict,experiment,video,mode=
         p_s2s,p_u2s = probDict[network]
         detection_data = simulate_steps(p_s2s,p_u2s,mode,nlitter,tsteps)
         detection_data.to_csv(f'{csvPath}{video}-{network}-detection-TPandFN.csv')
-    
+
+def generate_TPandFN_combinations(s2s,u2s=None):
+    if u2s is None:
+        u2s = s2s
+    TPandFN = {}
+    for p_s2s in s2s:
+        for p_u2s in u2s:
+            name = f'{p_s2s}_{p_u2s}'
+            name = name.replace('.','p')
+            TPandFN[name] = ((p_s2s,0),(p_u2s,0))
+    return TPandFN
+
 if __name__ == '__main__':
     resultsPath = '../data/computational_simulation/'
 #    TPandFN = {'mobilenetSSD-10000-th0p5-nms0p0-iSz124':((0.8302,0.0395),(0.0539,0.0155)),
@@ -159,6 +170,8 @@ if __name__ == '__main__':
                'mobilenetSSD-10000-th0p5-nms0p0-iSz220':((0.7259,0.2578),(0.1841,0.1842)),
                'yolov3-tiny-litter_10000-th0p0-nms0p0-iSz128':((0.6437,0.3026),(0.0105,0.0299)), 
                'yolov3-tiny-litter_10000-th0p0-nms0p0-iSz224':((0.6470 ,0.2830),(0.0327,0.0714))}
-    mode = 'norm'
-    process_computational_simulation(resultsPath,TPandFN,f'v2litters-comp-sim-ge50-{mode}-50fps-100k','comp-sim',mode=mode)
+    mode = 'mean'
+    s2s = [0.001,0.01,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,0.99,0.999,1.0]
+    TPandFN_var = generate_TPandFN_combinations(s2s)
+    process_computational_simulation(resultsPath,TPandFN_var,f'v2litters-comp-sim-{mode}-100k','var_s2s_u2s',mode=mode)
 #    detection_data = simulate_steps(0.8547,0.0939,100,100)
