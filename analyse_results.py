@@ -3,13 +3,15 @@ import pandas as pd
 import numpy as np
 import ntpath
 import glob
-import cv2 as cv
+#import cv2 as cv
 import matplotlib.pyplot as plt
 import seaborn as sns
 import utils
 import os
 from collections import Counter
 from matplotlib.ticker import MaxNLocator
+import seaborn as sns
+
 def get_detection_metric_data(filename,visible_threshold=1):
     
     rawDataDF = pd.read_csv(filename,index_col = 0, header = 0)
@@ -936,8 +938,6 @@ def metrics_data_breakdown(break_down,col,metric_name,df,step=0.1):
     break_down.loc[str(1),col] = f'{count} ({pct:02.2f}\%)'
     
     return break_down
-
-
 def resample_and_summarize(resultsPath,outputPath,networks,last_seen_threshold=30,
                            last_seen_min_y=300,threshold=1,rate=1,framerate=50):
     yolo_608 = apply_left_right_bottom_threshold(outputPath + '/yolo_608.csv')
@@ -1012,6 +1012,15 @@ def summarize_simplified_data(resultsPath,last_seen_threshold=30,last_seen_min_y
             summaryDF[networkname] = ntwkDF
     return summaryDF
 
+def plot_heatmap(df,figsize,figname):
+    fig = plt.figure(figsize=figsize)
+    ax = fig.gca()
+    sns.heatmap(df,annot=True,ax=ax,cbar=False,fmt='.4f')
+    ax.invert_yaxis()
+    ax.set_ylabel(df.index.name,fontweight='bold')
+    ax.set_xlabel(df.columns.name,fontweight='bold')
+    plt.savefig(figname,bbox_inches='tight')
+    
 def analyse_litters_summary_data(resultPath,summaryPath,visible_threshold=1):
     summaryPath = f'{summaryPath}-ge_threshold-{visible_threshold}'
     print(summaryPath)
@@ -1031,9 +1040,12 @@ def analyse_litters_summary_data(resultPath,summaryPath,visible_threshold=1):
         tex_df = pd.DataFrame(index=tex_rows)
         s2s_breakdown = pd.DataFrame()
         u2s_breakdown = pd.DataFrame()
-        
+        s2s_u2s_matrix = pd.DataFrame()
         for col in summaryDF.columns.get_level_values(0).unique():
             summaryCol = summaryDF[col]
+            
+            s2s,u2s = [float(i.replace('p','.')) for i in col.split('_')]
+            s2s_u2s_matrix.loc[s2s,u2s] = summaryCol['P_visible'].mean()
             col = shorten_network_name(col)
             for row in tex_rows:
                 if 'P_' in row:
@@ -1053,12 +1065,15 @@ def analyse_litters_summary_data(resultPath,summaryPath,visible_threshold=1):
             s2s_breakdown = metrics_data_breakdown(s2s_breakdown,col,'P_s2s',summaryCol)
             u2s_breakdown = metrics_data_breakdown(u2s_breakdown,col,'P_u2s',summaryCol)
             
-            #save analysis data
-            tex_df.to_latex(f'{summaryPath}/{resultCategory}_metrics_data.tex',escape=False)
-            s2s_breakdown.to_latex(f'{summaryPath}/{resultCategory}_s2s_breakdown.tex',escape=False)
-            u2s_breakdown.to_latex(f'{summaryPath}/{resultCategory}_u2s_breakdown.tex',escape=False)
-        return tex_df,s2s_breakdown,u2s_breakdown
-#        summary_csv_data_to_latex(f'{summaryPath}/{resultCategory}_metrics_data')
+        #save analysis data
+        tex_df.to_latex(f'{summaryPath}/{resultCategory}_metrics_data.tex',escape=False)
+        s2s_breakdown.to_latex(f'{summaryPath}/{resultCategory}_s2s_breakdown.tex',escape=False)
+        u2s_breakdown.to_latex(f'{summaryPath}/{resultCategory}_u2s_breakdown.tex',escape=False)
+        s2s_u2s_matrix.rename_axis('P_s2s',axis=0,inplace=True)
+        s2s_u2s_matrix.rename_axis('P_u2s',axis=1,inplace=True)
+        plot_heatmap(s2s_u2s_matrix.sort_index(),(11,5),f'{summaryPath}/{resultCategory}_s2s_u2s_heatmap.pdf')
+        return tex_df,s2s_breakdown,u2s_breakdown,s2s_u2s_matrix
+        
 def generate_plot_for_visibleData(summary_analysis):
     for f in glob.glob(summary_analysis + '*_visibleData.csv'):
         fig = plt.figure()
