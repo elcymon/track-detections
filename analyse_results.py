@@ -530,6 +530,86 @@ def summarise_csv_data(resultsPath,resultCategory,visible_threshold=1):
             visibleData = visibleData + list(rawDataDF['visible'].values)
     return summaryDF,visibleData
 
+def get_network_data(resultsPath,networks):
+    first_last_columns = ['x1','x2','y1','y2']
+    metrics_columns = ['seen2seen','seen2unseen','unseen2seen','unseen2unseen','seen','unseen','visible']
+    for networkName in networks:
+        print(networkName)
+        print()
+        print()
+        df = None
+        for videoFolder in glob.glob(resultsPath + f'*/*{networkName}'):
+            videoName,network = videoFolder.replace(resultsPath,'').split('/')
+            print(videoName)
+            detectionDF = pd.read_csv(videoFolder + '/' + videoName + '-' + networkName + '-detection.csv',
+                                      header = [0,1], index_col=0,low_memory=False)
+            tp_fn_df = pd.read_csv(videoFolder + '/' + videoName + '-' + networkName + '-detection-TPandFN.csv',
+                                   index_col=0,header=0)
+            index = pd.MultiIndex.from_product([[videoName],tp_fn_df.index.values])
+                
+            if df is None:
+    #            print (tp_fn_df.loc[:,metrics_columns].values)
+                cols = pd.MultiIndex.from_product([['metrics_columns'],metrics_columns])
+                df = pd.DataFrame(index=index,columns=cols)
+                
+                
+                newcols = pd.MultiIndex.from_product([['firstSeen','lastSeen'],first_last_columns])
+                df = df.reindex(columns = df.columns.union(newcols,sort=False),    )
+                
+                
+            else:
+                df = df.reindex(index = df.index.union(index,sort=False))
+            df.loc[videoName,'metrics_columns'] = tp_fn_df.loc[:,metrics_columns].values
+            for lit in tp_fn_df.index:
+                
+                litDF = detectionDF[lit].dropna()
+                litDF = litDF.loc[litDF['info'] == 'TP',first_last_columns]
+                if litDF.shape[0] > 0:
+                    first = litDF.index[0]
+                    last = litDF.index[-1]
+                    df.loc[(videoName,lit),'firstSeen'] = litDF.loc[first,first_last_columns].values
+                    df.loc[(videoName,lit),'lastSeen'] = litDF.loc[last,first_last_columns].values
+    #            df.loc[(videoName,lit),'metrics_columns'] = tp_fn_df.loc[lit,metrics_columns].values
+        ntwk = shorten_network_name(networkName)
+        os.makedirs('../data/simplified_data', exist_ok=True)
+        df.to_csv('../data/simplified_data/' + ntwk + '.csv')
+        print()
+        print()
+        print()
+            
+            
+            
+def get_groundtruth_data(resultsPath):
+    df = None
+    columns = ['x1','x2','y1','y2']
+    
+    for videoFolder in glob.glob(resultsPath + '/*/*608*'):
+        videoName,networkName = videoFolder.replace(resultsPath,'').split('/')
+        print(videoName)
+        csvDF = pd.read_csv(videoFolder + '/' + videoName + '-' + networkName + '-GT-pruned.csv',
+                            header = [0,1], index_col = 0, low_memory = False)
+        litterIDs = csvDF.columns.get_level_values(0).unique()
+        for lit in litterIDs:
+            litDF = csvDF[lit].dropna()
+            first = litDF.index[0]
+            last = litDF.index[-1]
+            visible = litDF.shape[0]
+            newIndex = pd.MultiIndex.from_product([[videoName],[lit]])
+            newColumns = pd.MultiIndex.from_product([['firstAppearance','lastAppearance'],columns])
+            if df is None:
+                df = pd.DataFrame(index = newIndex, columns = newColumns)
+                
+            else:
+                
+                df = df.reindex(index = df.index.union(newIndex,sort=False))
+            df.loc[(videoName,lit),'firstAppearance'] = litDF.loc[first,columns].values
+            df.loc[(videoName,lit),'lastAppearance'] = litDF.loc[last,columns].values
+            df.loc[(videoName,lit),'visible'] = visible
+#            return df,litDF
+#        if 'GOPR9069' in videoName:
+    df.to_csv(f'../data/simplified_data/yolo_608.csv')
+    return df
+
 def summarise_csv_data_litters(resultsPath,resultCategory,visible_threshold=1):
     '''
     Analyse litters data based on each litter
@@ -551,7 +631,8 @@ def summarise_csv_data_litters(resultsPath,resultCategory,visible_threshold=1):
             csvFile = csvFile + '-detection-' + resultCategory + '.csv'
             rawDataDF = get_detection_metric_data(csvFile,visible_threshold=visible_threshold)
             csvDF = rawDataDF.loc[:,'seen2seen':'visible']
-            
+            if csvDF.shape[0] == 0:
+                continue
 #            extraDataDF = generate_extra_summary_columns(rawDataDF.drop(labels=csvDF.columns,axis=1))
 #            csvDF = extraDataDF.join(csvDF)
             csvDF.loc[:,'P_s2s'] = csvDF['seen2seen'] / (csvDF['seen2seen'] + csvDF['seen2unseen'])
@@ -588,8 +669,8 @@ def close2frame_border_mask(fwidth,fheight,edgewidth,horizon):
     for x in maskDF.columns:
 #        theta = np.arccos((x - center[0])/float(radius))
         radiusY = center[1] -  np.sqrt(np.square(radius) - np.square(x - center[0]))  #radius * np.sin(theta) - fheight#
-        print(x)#,radiusY,theta)
-        if False and (x <= edgewidth or x >= maskDF.columns[-1] - edgewidth):
+#        print(x)#,radiusY,theta)
+        if True and (x <= edgewidth or x >= maskDF.columns[-1] - edgewidth):
             ymax = maskDF.index[-1]
         else:
             ymax = np.rint(radiusY + edgewidth)#/2.0)
@@ -597,7 +678,7 @@ def close2frame_border_mask(fwidth,fheight,edgewidth,horizon):
         
         maskDF.loc[ymin:ymax,x] = True
     
-#    sns.heatmap(maskDF.astype(np.int),vmax=1)
+    sns.heatmap(maskDF.astype(np.int),vmax=1)
     return maskDF
 def pct_close_to_frame_border(filename,maskDF=None):
     if maskDF is None:
@@ -619,37 +700,71 @@ def pct_close_to_frame_border(filename,maskDF=None):
     print(total_appearances,total_close_to_frame_border,pct)
     return othersDF,first_appearanceDF#,total_appearances,total_close_to_frame_border,pct
 
-def first_appearance(resultsPath):
-    firstAppearanceDF = pd.DataFrame(index=np.arange(1,541,1,dtype=np.int),
-                                     columns=np.arange(1,961,1,dtype=np.int))
-    firstAppearanceDF.loc[:,:] = 0
-    for videoFolder in glob.glob(resultsPath + '/*/*608*'):
-        videoName,networkName = videoFolder.replace(resultsPath,'').split('/')
-        csvDF = pd.read_csv(videoFolder + '/' + videoName + '-' + networkName + '-GT-pruned.csv',
-                            header = [0,1], index_col = 0, low_memory = False)
-        litterIDs = csvDF.columns.get_level_values(0).unique()
-        for lit in litterIDs:
-            firstOccurrence = csvDF[lit].dropna(axis=0,how='all').head(1)
-            cx = firstOccurrence[['x1','x2']].mean(axis=1).astype(int).values[0]
-            cy = firstOccurrence[['y1','y2']].mean(axis=1).astype(int).values[0]
-#            print(cx,cy)
-            
-            firstAppearanceDF.loc[cy,cx] += 1
-#            print(firstOccurrence)
-            
-        print(videoFolder)
-    sns.heatmap(firstAppearanceDF,annot=False,xticklabels=[],yticklabels=[])
-    sns.heatmap(firstAppearanceDF,annot=False,xticklabels=[],yticklabels=[],vmax=1)
-    return firstAppearanceDF
+def apply_left_right_bottom_threshold(filename,last_seen_threshold=30,last_seen_min_y=300,
+                                      threshold=1,horizon=[18,162,494,59,937,143]):
+    df = pd.read_csv(filename,index_col=[0,1],header=[0,1])
+    df = df.loc[df['visible'].iloc[:,0] >= threshold,:]
+    
+    df.loc[:,('firstAppearance','cx')] = df.loc[:,[('firstAppearance','x1'),('firstAppearance','x2')]].mean(axis=1).astype(np.int)
+    df.loc[:,('firstAppearance','cy')] = df.loc[:,[('firstAppearance','y1'),('firstAppearance','y2')]].mean(axis=1).astype(np.int)
+    
+    df.loc[:,('lastAppearance','cx')] = df.loc[:,[('lastAppearance','x1'),('lastAppearance','x2')]].mean(axis=1).astype(np.int)
+    df.loc[:,('lastAppearance','cy')] = df.loc[:,[('lastAppearance','y1'),('lastAppearance','y2')]].mean(axis=1).astype(np.int)
+    left = (df.loc[:,('lastAppearance','cx')] <= last_seen_threshold) & (df.loc[:,('lastAppearance','cy')] >= last_seen_min_y)
+    right = (df.loc[:,('lastAppearance','cx')] >= (960 - last_seen_threshold)) & (df.loc[:,('lastAppearance','cy')] >= last_seen_min_y)
+    bottom = df.loc[:,('lastAppearance','cy')] >= (540 - last_seen_threshold)
+    
+    center,radius,start_angle,end_angle = utils.findCircle(*horizon)
+    horizon_start = df['firstAppearance'].apply(lambda  x: \
+            abs(np.linalg.norm(x[['cx','cy']]-center) - radius) <= 30,axis=1)
+    df = df.loc[(left | right | bottom) & horizon_start ,:]
+    return df
+
+def analyse_first_last_visible(filename,output_folder,threshold=1,last_seen_threshold=30,last_seen_min_y = 300):
+    figname = output_folder + '/{}-threshold_{}-nlitter_{}-last_seen_threshold_{}-last_seen_min_y_{}'
+    appearanceDF = pd.DataFrame(index=np.arange(1,541,1,dtype=np.int),
+                            columns=np.arange(1,961,1,dtype=np.int))
+    
+    
+
+    df = apply_left_right_bottom_threshold(filename)    
+    heatmapData = {}
+    for appearance in ['firstAppearance','lastAppearance']:
+        print(appearance)
+        appearanceDF.loc[:,:] = 0
+        for i in df.index:
+#            print(i)
+            cx = df.loc[i,(appearance,'cx')]
+            cy = df.loc[i,(appearance,'cy')]
+            if cx in appearanceDF.columns and cy in appearanceDF.index:
+                appearanceDF.loc[cy,cx] += 1
+        appearanceDF = appearanceDF.astype(np.int)
+        heatmapData[appearance] = appearanceDF.copy()
+#        return appearanceDF
+        heatmap(appearanceDF,figname.format(appearance,threshold,df.shape[0],last_seen_threshold,last_seen_min_y),
+                    vmax=1,colorbar=False)
+    f2 = plt.figure(figsize=(16,9))
+    ax = f2.gca()
+    for i in df.index:
+        x = df.loc[i,[('firstAppearance','cx'),('lastAppearance','cx')]]
+        y = df.loc[i,[('firstAppearance','cy'),('lastAppearance','cy')]]
+        plt.plot(x,y,color=(0,0,0,0.2))
+    ax.set_ylim(bottom=1,top=540)
+    ax.set_xlim(left=1,right=960)
+    ax.invert_yaxis()
+    plt.savefig(figname.format('first_to_last',threshold,df.shape[0],last_seen_threshold,last_seen_min_y),bbox_inches='tight')
+    return df,heatmapData
+
 def create_frameDim_DF():
     frame = pd.DataFrame(index=np.arange(1,541,1,dtype=np.int),
                                      columns=np.arange(1,961,1,dtype=np.int))
     frame.loc[:,:] = 0
     return frame
 def heatmap(df,figName,vmax,colorbar=True):
-    f = plt.figure(figsize=(16,9))
+    df.to_csv(figName + '.csv')
+    f = plt.figure(figsize=(10,6))
     sns.heatmap(df,annot=False,xticklabels=[],yticklabels=[],ax=f.gca(),vmax=vmax,cbar=colorbar)
-    f.savefig(figName, bbox_inches='tight')
+    f.savefig(figName + '.png', bbox_inches='tight')
     
 def bbox_heatdata(resultsPath,summary_analysis,
                   networkPatterns=['*mobile*220*','*yolo*128*','*yolo*224*','*mobile*124*',],
@@ -810,23 +925,102 @@ def metrics_data_breakdown(break_down,col,metric_name,df,step=0.1):
         if stop < 1:
             count = df.loc[(df[metric_name] > start) & (df[metric_name] <= (stop)),metric_name].shape[0]
             pct = float(count) / df.shape[0] * 100
-            break_down.loc[f'{start}>i<={stop}',col] = f'{count} ({pct:02.2f}\%)'
+            break_down.loc[f'{start}<i<={stop}',col] = f'{count} ({pct:02.2f}\%)'
         else:
             count = df.loc[(df[metric_name] > start) & (df[metric_name] < (stop)),metric_name].shape[0]
             pct = float(count) / df.shape[0] * 100
-            break_down.loc[f'{start}>i<{stop}',col] = f'{count} ({pct:02.2f}\%)'
+            break_down.loc[f'{start}<i<{stop}',col] = f'{count} ({pct:02.2f}\%)'
         start = stop
     count = df.loc[df[metric_name] == 1,metric_name].shape[0]
     pct = float(count) / df.shape[0] * 100
     break_down.loc[str(1),col] = f'{count} ({pct:02.2f}\%)'
     
     return break_down
+
+
+def resample_and_summarize(resultsPath,outputPath,networks,last_seen_threshold=30,
+                           last_seen_min_y=300,threshold=1,rate=1,framerate=50):
+    yolo_608 = apply_left_right_bottom_threshold(outputPath + '/yolo_608.csv')
+    processingTime = framerate / float(rate)
+    summaryDF= None
+    for networkname in networks:
+        ntwkDF = None
+        print(networkname)
+        for videoFolder in glob.glob(resultsPath + f'*/*{networkname}'):
+            videoName,network = videoFolder.replace(resultsPath,'').split('/')
+            print(videoName)
+#            detectionDF = pd.read_csv(videoFolder + '/' + videoName + '-' + networkName + '-detection.csv',
+#                                      header = [0,1], index_col=0,low_memory=False)
+            tp_fn_df = pd.read_csv(videoFolder + '/' + videoName + '-' + networkname + '-detection-TPandFN.csv',
+                                   index_col=0,header=0)
+            tp_fn_df = tp_fn_df.loc[yolo_608.loc[videoName,:].index,:]
+            cols2drop = tp_fn_df.loc[:,'seen2seen':'visible'].columns
+            tp_fn_df.drop(labels=cols2drop,axis=1,inplace=True)
+            frames = np.ceil(np.arange(0,tp_fn_df.columns.shape[0],processingTime)).astype(np.int)
+            frames = frames[frames < tp_fn_df.columns.shape[0]]
+            filteredDF = add_metrics_data(cols2drop,tp_fn_df.iloc[:,frames])[cols2drop]
+            index = pd.MultiIndex.from_product([[videoName],filteredDF.index.values])
+            if ntwkDF is None:
+#                cols = pd.MultiIndex.from_product([[networkname],cols2drop])
+                ntwkDF = pd.DataFrame(index=index,columns=cols2drop)
+            else:
+                ntwkDF = ntwkDF.reindex(index=ntwkDF.index.union(index,sort=False))
+            ntwkDF.loc[videoName,:] = filteredDF.loc[:,cols2drop].values
+#        networkname = ntwk.replace(resultsPath,'').replace('/','').replace('.csv','')
+        
+        ntwkDF.loc[:,'P_s2s'] = ntwkDF['seen2seen']/(ntwkDF['seen2seen']+ntwkDF['seen2unseen'])
+        ntwkDF.loc[:,'P_u2s'] = ntwkDF['unseen2seen']/(ntwkDF['unseen2seen']+ntwkDF['unseen2unseen'])
+        ntwkDF.loc[:,'P_visible'] = ntwkDF['seen']/ntwkDF['visible']
+        newcols = pd.MultiIndex.from_product([[networkname],ntwkDF.columns.values])
+        if summaryDF is None:
+            summaryDF = pd.DataFrame(index = ntwkDF.index,
+                                     columns = newcols)
+            summaryDF[networkname] = ntwkDF
+#            return summaryDF,ntwkDF
+        else:
+#            newDF = pd.DataFrame(index=ntwkDF.index,columns=newcols)
+#            newDF.loc[ntwkDF.index,networkname].update(ntwkDF)
+            summaryDF = summaryDF.reindex(columns=summaryDF.columns.union(newcols))
+#            summaryDF.loc[ntwkDF.index,networkname].update(ntwkDF)
+            summaryDF[networkname] = ntwkDF
+    return summaryDF
+            
+    
+def summarize_simplified_data(resultsPath,last_seen_threshold=30,last_seen_min_y=300,threshold=1):
+    yolo_608 = apply_left_right_bottom_threshold(resultsPath + '/yolo_608.csv')
+    summaryDF = None
+    for ntwk in glob.glob(resultsPath + '/*.csv'):
+        print(ntwk)
+        if '608' in ntwk:
+            continue
+        networkname = ntwk.replace(resultsPath,'').replace('/','').replace('.csv','')
+        ntwkDF = pd.read_csv(ntwk,index_col=[0,1],header=[0,1]).loc[yolo_608.index,'metrics_columns']
+        ntwkDF.loc[:,'P_s2s'] = ntwkDF['seen2seen']/(ntwkDF['seen2seen']+ntwkDF['seen2unseen'])
+        ntwkDF.loc[:,'P_u2s'] = ntwkDF['unseen2seen']/(ntwkDF['unseen2seen']+ntwkDF['unseen2unseen'])
+        ntwkDF.loc[:,'P_visible'] = ntwkDF['seen']/ntwkDF['visible']
+        newcols = pd.MultiIndex.from_product([[networkname],ntwkDF.columns.values])
+        if summaryDF is None:
+            summaryDF = pd.DataFrame(index = ntwkDF.index,
+                                     columns = newcols)
+            summaryDF[networkname] = ntwkDF
+#            return summaryDF,ntwkDF
+        else:
+#            newDF = pd.DataFrame(index=ntwkDF.index,columns=newcols)
+#            newDF.loc[ntwkDF.index,networkname].update(ntwkDF)
+            summaryDF = summaryDF.reindex(columns=summaryDF.columns.union(newcols))
+#            summaryDF.loc[ntwkDF.index,networkname].update(ntwkDF)
+            summaryDF[networkname] = ntwkDF
+    return summaryDF
+
 def analyse_litters_summary_data(resultPath,summaryPath,visible_threshold=1):
     summaryPath = f'{summaryPath}-ge_threshold-{visible_threshold}'
     print(summaryPath)
     os.makedirs(summaryPath,exist_ok=True)
     for resultCategory in ['TPandFN']:
-        summaryDF = summarise_csv_data_litters(resultPath,resultCategory,visible_threshold)
+        networks = ['mobilenetSSD-10000-th0p5-nms0p0-iSz124','mobilenetSSD-10000-th0p5-nms0p0-iSz220','yolov3-tiny-litter_10000-th0p0-nms0p0-iSz128','yolov3-tiny-litter_10000-th0p0-nms0p0-iSz224']
+        summaryDF = resample_and_summarize('../data/model_data/','../data/simplified_data',networks)
+#        summaryDF = summarize_simplified_data(resultPath)
+#        summaryDF = summarise_csv_data_litters(resultPath,resultCategory,visible_threshold)
         if summaryDF is None:
             summaryDF = pd.read_csv(f'{summaryPath}/{resultCategory}_metrics_data.csv',index_col=[0,1],header=[0,1])
 #            return summaryDF
@@ -906,6 +1100,6 @@ if __name__ == '__main__':
 #    TPandFN.to_csv(summary_analysis + 'TPandFN.csv')
     experiments = '../data/summary_analysis'
     comp_model = '../data/computational_simulation/comp-sim-100k'
-    compare_fine_grain(experiments,comp_model,'../data/summary_analysis')
+#    compare_fine_grain(experiments,comp_model,'../data/summary_analysis')
 #    generate_plot_for_visibleData(experiments + '/')
     
