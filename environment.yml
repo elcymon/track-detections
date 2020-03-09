@@ -1,0 +1,8 @@
+name: litter-detection
+channels:
+	- conda-forge
+dependencies:
+	- pandas
+	- matplotlib
+	- seaborn
+	- numpy
