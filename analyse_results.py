@@ -995,9 +995,18 @@ def summarize_simplified_data(resultsPath,last_seen_threshold=30,last_seen_min_y
             continue
         networkname = ntwk.replace(resultsPath,'').replace('/','').replace('.csv','')
         ntwkDF = pd.read_csv(ntwk,index_col=[0,1],header=[0,1]).loc[yolo_608.index,'metrics_columns']
-        ntwkDF.loc[:,'P_s2s'] = ntwkDF['seen2seen']/(ntwkDF['seen2seen']+ntwkDF['seen2unseen'])
-        ntwkDF.loc[:,'P_u2s'] = ntwkDF['unseen2seen']/(ntwkDF['unseen2seen']+ntwkDF['unseen2unseen'])
+        s2s_denominator = ntwkDF['seen2seen']+ntwkDF['seen2unseen']
+        ntwkDF.loc[s2s_denominator > 0,'P_s2s'] = \
+        ntwkDF.loc[s2s_denominator > 0,'seen2seen']/s2s_denominator[s2s_denominator>0]
+        ntwkDF.loc[s2s_denominator == 0,'P_s2s'] = 0 #was never seen, so P_s2s is 0
+        
+        u2s_denominator = ntwkDF['unseen2seen']+ntwkDF['unseen2unseen']
+        ntwkDF.loc[u2s_denominator > 0,'P_u2s'] = \
+        ntwkDF.loc[u2s_denominator > 0,'unseen2seen']/u2s_denominator[u2s_denominator>0]
+        ntwkDF.loc[u2s_denominator == 0,'P_u2s'] = 1 #was always seen, so P_u2s should be 1
+        
         ntwkDF.loc[:,'P_visible'] = ntwkDF['seen']/ntwkDF['visible']
+        
         newcols = pd.MultiIndex.from_product([[networkname],ntwkDF.columns.values])
         if summaryDF is None:
             summaryDF = pd.DataFrame(index = ntwkDF.index,
