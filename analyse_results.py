@@ -1021,13 +1021,13 @@ def plot_heatmap(df,figsize,figname):
     ax.set_xlabel(df.columns.name,fontweight='bold')
     plt.savefig(figname,bbox_inches='tight')
     
-def analyse_litters_summary_data(resultPath,summaryPath,visible_threshold=1):
+def analyse_litters_summary_data(resultPath,summaryPath,visible_threshold=1,na_filter=None,var_s2s_u2s=False):
     summaryPath = f'{summaryPath}-ge_threshold-{visible_threshold}'
     print(summaryPath)
     os.makedirs(summaryPath,exist_ok=True)
     for resultCategory in ['TPandFN']:
-        networks = ['mobilenetSSD-10000-th0p5-nms0p0-iSz124','mobilenetSSD-10000-th0p5-nms0p0-iSz220','yolov3-tiny-litter_10000-th0p0-nms0p0-iSz128','yolov3-tiny-litter_10000-th0p0-nms0p0-iSz224']
-        summaryDF = resample_and_summarize('../data/model_data/','../data/simplified_data',networks)
+        #networks = ['mobilenetSSD-10000-th0p5-nms0p0-iSz124','mobilenetSSD-10000-th0p5-nms0p0-iSz220','yolov3-tiny-litter_10000-th0p0-nms0p0-iSz128','yolov3-tiny-litter_10000-th0p0-nms0p0-iSz224']
+        summaryDF = None #resample_and_summarize('../data/model_data/','../data/simplified_data',networks)
 #        summaryDF = summarize_simplified_data(resultPath)
 #        summaryDF = summarise_csv_data_litters(resultPath,resultCategory,visible_threshold)
         if summaryDF is None:
@@ -1038,18 +1038,27 @@ def analyse_litters_summary_data(resultPath,summaryPath,visible_threshold=1):
             summaryDF.to_csv(f'{summaryPath}/{resultCategory}_metrics_data.csv')
         tex_rows = summaryDF.columns.get_level_values(1).unique()
         tex_df = pd.DataFrame(index=tex_rows)
+        means_df = pd.DataFrame()
+        stddev_df = pd.DataFrame()
         s2s_breakdown = pd.DataFrame()
         u2s_breakdown = pd.DataFrame()
-        s2s_u2s_matrix = pd.DataFrame()
+        if var_s2s_u2s:
+            s2s_u2s_matrix = pd.DataFrame()
         for col in summaryDF.columns.get_level_values(0).unique():
             summaryCol = summaryDF[col]
-            
-            s2s,u2s = [float(i.replace('p','.')) for i in col.split('_')]
-            s2s_u2s_matrix.loc[s2s,u2s] = summaryCol['P_visible'].mean()
+            if na_filter == 0:
+                summaryCol = summaryCol.fillna(0)
+            elif na_filter == 'drop':
+                summaryCol = summaryCol.dropna()
+            if var_s2s_u2s:
+                s2s,u2s = [float(i.replace('p','.')) for i in col.split('_')]
+                s2s_u2s_matrix.loc[s2s,u2s] = summaryCol['P_visible'].mean()
             col = shorten_network_name(col)
             for row in tex_rows:
                 if 'P_' in row:
                     tex_df.loc[row,col] = f'${summaryCol[row].mean():.4f} \pm {summaryCol[row].std():.4f}$'
+                    means_df.loc[row,col] = summaryCol[row].mean()
+                    stddev_df.loc[row,col] = summaryCol[row].std()
                 else:
                     tex_df.loc[row,col] = f'{int(summaryCol[row].sum())}'
             #get extra information
@@ -1066,12 +1075,19 @@ def analyse_litters_summary_data(resultPath,summaryPath,visible_threshold=1):
             u2s_breakdown = metrics_data_breakdown(u2s_breakdown,col,'P_u2s',summaryCol)
             
         #save analysis data
-        tex_df.to_latex(f'{summaryPath}/{resultCategory}_metrics_data.tex',escape=False)
-        s2s_breakdown.to_latex(f'{summaryPath}/{resultCategory}_s2s_breakdown.tex',escape=False)
-        u2s_breakdown.to_latex(f'{summaryPath}/{resultCategory}_u2s_breakdown.tex',escape=False)
-        s2s_u2s_matrix.rename_axis('P_s2s',axis=0,inplace=True)
-        s2s_u2s_matrix.rename_axis('P_u2s',axis=1,inplace=True)
-        plot_heatmap(s2s_u2s_matrix.sort_index(),(11,5),f'{summaryPath}/{resultCategory}_s2s_u2s_heatmap.pdf')
+        tex_df.to_latex(f'{summaryPath}/{resultCategory}_metrics_data_nafilter_{na_filter}.tex',escape=False)
+        
+        means_df.to_csv(f'{summaryPath}/{resultCategory}_probability_means_nafilter_{na_filter}.csv')
+        stddev_df.to_csv(f'{summaryPath}/{resultCategory}_probability_stddev_nafilter_{na_filter}.csv')
+        
+        s2s_breakdown.to_latex(f'{summaryPath}/{resultCategory}_s2s_breakdown_nafilter_{na_filter}.tex',escape=False)
+        u2s_breakdown.to_latex(f'{summaryPath}/{resultCategory}_u2s_breakdown_nafilter_{na_filter}.tex',escape=False)
+        if var_s2s_u2s:
+            s2s_u2s_matrix.rename_axis('P_s2s',axis=0,inplace=True)
+            s2s_u2s_matrix.rename_axis('P_u2s',axis=1,inplace=True)
+            plot_heatmap(s2s_u2s_matrix.sort_index(),(11,5),f'{summaryPath}/{resultCategory}_s2s_u2s_heatmap.pdf')
+        else:
+            s2s_u2s_matrix = None
         return tex_df,s2s_breakdown,u2s_breakdown,s2s_u2s_matrix
         
 def generate_plot_for_visibleData(summary_analysis):

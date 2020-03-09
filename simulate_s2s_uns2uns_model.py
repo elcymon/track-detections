@@ -36,6 +36,7 @@ def simulate_steps(prob_s2s,prob_u2s,mode,nlitter,tsteps):
         print('Unknown Mode',mode)
         exit(1)
     for t in range(tsteps):
+        print(' ' * 20,end='')
         print('\r',t,end='')
         detection_data.loc[:,t] = 0
         detection_data.loc[:,'visible'] += 1 #always visible
