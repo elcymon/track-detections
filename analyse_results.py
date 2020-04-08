@@ -11,6 +11,11 @@ import os
 from collections import Counter
 from matplotlib.ticker import MaxNLocator
 import seaborn as sns
+import matplotlib
+matplotlib.rcParams['pdf.fonttype'] = 42
+matplotlib.rcParams['ps.fonttype'] = 42
+matplotlib.rcParams['ps.usedistiller'] = 'xpdf'
+matplotlib.use('PS')
 
 def get_detection_metric_data(filename,visible_threshold=1):
     
