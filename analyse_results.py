@@ -1042,22 +1042,33 @@ def plot_heatmap(df,figsize,figname):
     plt.savefig(figname,bbox_inches='tight')
     
 def analyse_litters_summary_data(resultPath,summaryPath,visible_threshold=1,
-                                 na_filter=None,var_s2s_u2s=False,rate=1):
-    summaryPath = f'{summaryPath}-ge_threshold-{visible_threshold}'
+                                 na_filter=None,var_s2s_u2s=False,rate=1,
+                                 platform='virtual',network=None):
+    allnetworks = {'mssd124':'mobilenetSSD-10000-th0p5-nms0p0-iSz124',
+                   'mssd220':'mobilenetSSD-10000-th0p5-nms0p0-iSz220',
+                   'y3tiny128':'yolov3-tiny-litter_10000-th0p0-nms0p0-iSz128',
+                   'y3tiny224':'yolov3-tiny-litter_10000-th0p0-nms0p0-iSz224'}
+    
+    summaryPath = f'{summaryPath}/{platform}/'
+    filenameprefix = f'{network}network_{rate:.2f}fps'.replace('.00','').replace('.','p')
     print(summaryPath)
     os.makedirs(summaryPath,exist_ok=True)
     for resultCategory in ['TPandFN']:
-        networks = ['mobilenetSSD-10000-th0p5-nms0p0-iSz124','mobilenetSSD-10000-th0p5-nms0p0-iSz220']#,'yolov3-tiny-litter_10000-th0p0-nms0p0-iSz128','yolov3-tiny-litter_10000-th0p0-nms0p0-iSz224']
+        if network in allnetworks.keys():
+            networks = [allnetworks[network]]
+        else:
+            networks = list(allnetworks.values())
+        
         summaryDF = resample_and_summarize('../data/model_data/','../data/simplified_data',networks,
                                            threshold=visible_threshold,rate=rate)
 #        summaryDF = summarize_simplified_data(resultPath)
 #        summaryDF = summarise_csv_data_litters(resultPath,resultCategory,visible_threshold)
         if summaryDF is None:
-            summaryDF = pd.read_csv(f'{summaryPath}/{resultCategory}_metrics_data.csv',index_col=[0,1],header=[0,1])
+            summaryDF = pd.read_csv(f'{summaryPath}/{filenameprefix}_{resultCategory}_metrics_data.csv',index_col=[0,1],header=[0,1])
 #            return summaryDF
 #            print(summaryDF.shape)
         else:
-            summaryDF.to_csv(f'{summaryPath}/{resultCategory}_metrics_data.csv')
+            summaryDF.to_csv(f'{summaryPath}/{filenameprefix}_{resultCategory}_metrics_data.csv')
         tex_rows = summaryDF.columns.get_level_values(1).unique()
         tex_df = pd.DataFrame(index=tex_rows)
         means_df = pd.DataFrame()
@@ -1103,13 +1114,13 @@ def analyse_litters_summary_data(resultPath,summaryPath,visible_threshold=1,
             u2s_breakdown = metrics_data_breakdown(u2s_breakdown,col,'P_u2s',summaryCol)
             
         #save analysis data
-        tex_df.to_latex(f'{summaryPath}/{resultCategory}_metrics_data_nafilter_{na_filter}.tex',escape=False)
+        tex_df.to_latex(f'{summaryPath}/{filenameprefix}_{resultCategory}_metrics_data_nafilter_{na_filter}.tex',escape=False)
         
-        means_df.to_csv(f'{summaryPath}/{resultCategory}_probability_means_nafilter_{na_filter}.csv')
-        stddev_df.to_csv(f'{summaryPath}/{resultCategory}_probability_stddev_nafilter_{na_filter}.csv')
+        means_df.to_csv(f'{summaryPath}/{filenameprefix}_{resultCategory}_probability_means_nafilter_{na_filter}.csv')
+        stddev_df.to_csv(f'{summaryPath}/{filenameprefix}_{resultCategory}_probability_stddev_nafilter_{na_filter}.csv')
         
-        s2s_breakdown.to_latex(f'{summaryPath}/{resultCategory}_s2s_breakdown_nafilter_{na_filter}.tex',escape=False)
-        u2s_breakdown.to_latex(f'{summaryPath}/{resultCategory}_u2s_breakdown_nafilter_{na_filter}.tex',escape=False)
+        s2s_breakdown.to_latex(f'{summaryPath}/{filenameprefix}_{resultCategory}_s2s_breakdown_nafilter_{na_filter}.tex',escape=False)
+        u2s_breakdown.to_latex(f'{summaryPath}/{filenameprefix}_{resultCategory}_u2s_breakdown_nafilter_{na_filter}.tex',escape=False)
         if var_s2s_u2s:
             s2s_u2s_matrix.rename_axis('P_s2s',axis=0,inplace=True)
             s2s_u2s_matrix.rename_axis('P_u2s',axis=1,inplace=True)
