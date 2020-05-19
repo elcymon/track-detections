@@ -12,10 +12,10 @@ from collections import Counter
 from matplotlib.ticker import MaxNLocator
 import seaborn as sns
 import matplotlib
-matplotlib.rcParams['pdf.fonttype'] = 42
-matplotlib.rcParams['ps.fonttype'] = 42
-matplotlib.rcParams['ps.usedistiller'] = 'xpdf'
-matplotlib.use('PS')
+#matplotlib.rcParams['pdf.fonttype'] = 42
+#matplotlib.rcParams['ps.fonttype'] = 42
+#matplotlib.rcParams['ps.usedistiller'] = 'xpdf'
+#matplotlib.use('PS')
 
 def get_detection_metric_data(filename,visible_threshold=1):
     
@@ -1041,13 +1041,15 @@ def plot_heatmap(df,figsize,figname):
     ax.set_xlabel(df.columns.name,fontweight='bold')
     plt.savefig(figname,bbox_inches='tight')
     
-def analyse_litters_summary_data(resultPath,summaryPath,visible_threshold=1,na_filter=None,var_s2s_u2s=False):
+def analyse_litters_summary_data(resultPath,summaryPath,visible_threshold=1,
+                                 na_filter=None,var_s2s_u2s=False,rate=1):
     summaryPath = f'{summaryPath}-ge_threshold-{visible_threshold}'
     print(summaryPath)
     os.makedirs(summaryPath,exist_ok=True)
     for resultCategory in ['TPandFN']:
-        #networks = ['mobilenetSSD-10000-th0p5-nms0p0-iSz124','mobilenetSSD-10000-th0p5-nms0p0-iSz220','yolov3-tiny-litter_10000-th0p0-nms0p0-iSz128','yolov3-tiny-litter_10000-th0p0-nms0p0-iSz224']
-        summaryDF = None #resample_and_summarize('../data/model_data/','../data/simplified_data',networks)
+        networks = ['mobilenetSSD-10000-th0p5-nms0p0-iSz124','mobilenetSSD-10000-th0p5-nms0p0-iSz220']#,'yolov3-tiny-litter_10000-th0p0-nms0p0-iSz128','yolov3-tiny-litter_10000-th0p0-nms0p0-iSz224']
+        summaryDF = resample_and_summarize('../data/model_data/','../data/simplified_data',networks,
+                                           threshold=visible_threshold,rate=rate)
 #        summaryDF = summarize_simplified_data(resultPath)
 #        summaryDF = summarise_csv_data_litters(resultPath,resultCategory,visible_threshold)
         if summaryDF is None:
@@ -1155,8 +1157,8 @@ if __name__ == '__main__':
 #    TPandFN = summarise_csv_data(resultPath,resultCategory = 'TPandFN')
     
 #    TPandFN.to_csv(summary_analysis + 'TPandFN.csv')
-    experiments = '../data/summary_analysis'
-    comp_model = '../data/computational_simulation/comp-sim-100k'
+#    experiments = '../data/summary_analysis'
+#    comp_model = '../data/computational_simulation/comp-sim-100k'
 #    compare_fine_grain(experiments,comp_model,'../data/summary_analysis')
 #    generate_plot_for_visibleData(experiments + '/')
     
