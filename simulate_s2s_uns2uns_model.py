@@ -151,28 +151,37 @@ if __name__ == '__main__':
 #               'mobilenetSSD-10000-th0p5-nms0p0-iSz220':((0.8517,0.0289),(0.1227,0.0306)),
 #               'yolov3-tiny-litter_10000-th0p0-nms0p0-iSz128':((0.8138,0.0651),(0.0099,0.0054)), 
 #               'yolov3-tiny-litter_10000-th0p0-nms0p0-iSz224':((0.8188,0.0548),(0.0249,0.0143))}
-    
-    TPandFN = {'mobilenetSSD-10000-th0p5-nms0p0-iSz124':((0.6784,0.2791),(0.0696,0.0998)),
-               'mobilenetSSD-10000-th0p5-nms0p0-iSz220':((0.7361,0.2577),(0.1696,0.1687)),
-               'yolov3-tiny-litter_10000-th0p0-nms0p0-iSz128':((0.6638,0.2952),(0.0095,0.0263)), 
-               'yolov3-tiny-litter_10000-th0p0-nms0p0-iSz224':((0.6656,0.2793),(0.0292,0.0610))}
-    
-    TPandFN_1hz = {'mobilenetSSD-10000-th0p5-nms0p0-iSz124':((0.6499,0.4278),(0.2405 ,0.3476)),
-               'mobilenetSSD-10000-th0p5-nms0p0-iSz220':((0.7121,0.3815),(0.4158,0.4239)),
-               'yolov3-tiny-litter_10000-th0p0-nms0p0-iSz128':((0.5355,0.4549),(0.0670,0.1927)), 
-               'yolov3-tiny-litter_10000-th0p0-nms0p0-iSz224':((0.5248 ,0.4356),(0.1149,0.2565))}
-    
-    TPandFN_4hz = {'mobilenetSSD-10000-th0p5-nms0p0-iSz124':((0.5651,0.3312),(0.1591 ,0.2439)),
-               'mobilenetSSD-10000-th0p5-nms0p0-iSz220':((0.6385,0.3061),(0.3473,0.3496)),
-               'yolov3-tiny-litter_10000-th0p0-nms0p0-iSz128':((0.4545,0.3614),(0.0302,0.0926)), 
-               'yolov3-tiny-litter_10000-th0p0-nms0p0-iSz224':((0.4737 ,0.3656),(0.0783,0.1770))}
-    
-    TPandFN_40hz =  {'mobilenetSSD-10000-th0p5-nms0p0-iSz124':((0.6676,0.2820),(0.0750 ,0.1087)),
-               'mobilenetSSD-10000-th0p5-nms0p0-iSz220':((0.7259,0.2578),(0.1841,0.1842)),
-               'yolov3-tiny-litter_10000-th0p0-nms0p0-iSz128':((0.6437,0.3026),(0.0105,0.0299)), 
-               'yolov3-tiny-litter_10000-th0p0-nms0p0-iSz224':((0.6470 ,0.2830),(0.0327,0.0714))}
-    mode = 'mean'
-    s2s = [0.001,0.01,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,0.99,0.999,1.0]
-    TPandFN_var = generate_TPandFN_combinations(s2s)
-    process_computational_simulation(resultsPath,TPandFN_var,f'v2litters-comp-sim-{mode}-100k','var_s2s_u2s',mode=mode)
+#    
+#    TPandFN = {'mobilenetSSD-10000-th0p5-nms0p0-iSz124':((0.6784,0.2791),(0.0696,0.0998)),
+#               'mobilenetSSD-10000-th0p5-nms0p0-iSz220':((0.7361,0.2577),(0.1696,0.1687)),
+#               'yolov3-tiny-litter_10000-th0p0-nms0p0-iSz128':((0.6638,0.2952),(0.0095,0.0263)), 
+#               'yolov3-tiny-litter_10000-th0p0-nms0p0-iSz224':((0.6656,0.2793),(0.0292,0.0610))}
+#    
+#    TPandFN_1hz = {'mobilenetSSD-10000-th0p5-nms0p0-iSz124':((0.6499,0.4278),(0.2405 ,0.3476)),
+#               'mobilenetSSD-10000-th0p5-nms0p0-iSz220':((0.7121,0.3815),(0.4158,0.4239)),
+#               'yolov3-tiny-litter_10000-th0p0-nms0p0-iSz128':((0.5355,0.4549),(0.0670,0.1927)), 
+#               'yolov3-tiny-litter_10000-th0p0-nms0p0-iSz224':((0.5248 ,0.4356),(0.1149,0.2565))}
+#    
+#    TPandFN_4hz = {'mobilenetSSD-10000-th0p5-nms0p0-iSz124':((0.5651,0.3312),(0.1591 ,0.2439)),
+#               'mobilenetSSD-10000-th0p5-nms0p0-iSz220':((0.6385,0.3061),(0.3473,0.3496)),
+#               'yolov3-tiny-litter_10000-th0p0-nms0p0-iSz128':((0.4545,0.3614),(0.0302,0.0926)), 
+#               'yolov3-tiny-litter_10000-th0p0-nms0p0-iSz224':((0.4737 ,0.3656),(0.0783,0.1770))}
+#    
+#    TPandFN_40hz =  {'mobilenetSSD-10000-th0p5-nms0p0-iSz124':((0.6676,0.2820),(0.0750 ,0.1087)),
+#               'mobilenetSSD-10000-th0p5-nms0p0-iSz220':((0.7259,0.2578),(0.1841,0.1842)),
+#               'yolov3-tiny-litter_10000-th0p0-nms0p0-iSz128':((0.6437,0.3026),(0.0105,0.0299)), 
+#               'yolov3-tiny-litter_10000-th0p0-nms0p0-iSz224':((0.6470 ,0.2830),(0.0327,0.0714))}
+#    mode = 'mean'
+#    s2s = [0.001,0.01,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,0.99,0.999,1.0]
+#    TPandFN_var = generate_TPandFN_combinations(s2s)
+#    process_computational_simulation(resultsPath,TPandFN_var,f'v2litters-comp-sim-{mode}-100k','var_s2s_u2s',mode=mode)
 #    detection_data = simulate_steps(0.8547,0.0939,100,100)
+    
+    TPandFN = {'mSSD124-50fps':((0.7896,0.1824),(0.1293,0.1031)),
+                'mSSD220-50fps':((0.8558,0.1002),(0.2567,0.1586)),
+                'mSSD124-Pi3':((0.5823,0.3715),(0.3685,0.3042)),
+                'mSSD220-Pi3':((0.5962,0.4440),(0.7081,0.3450)),
+                'mSSD124-Pi4':((0.7006,0.2254),(0.2038,0.1686)),
+                'mSSD220-Pi4':((0.7364,0.1971),(0.4955,0.2905))}
+    mode = 'mean'
+    process_computational_simulation(resultsPath,TPandFN,f'v2litters-comp-sim-{mode}-1000tsteps-100litter','50fps_pi3_pi4',mode=mode)

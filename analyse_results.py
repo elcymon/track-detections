@@ -12,10 +12,10 @@ from collections import Counter
 from matplotlib.ticker import MaxNLocator
 import seaborn as sns
 import matplotlib
-matplotlib.rcParams['pdf.fonttype'] = 42
-matplotlib.rcParams['ps.fonttype'] = 42
-matplotlib.rcParams['ps.usedistiller'] = 'xpdf'
-matplotlib.use('PS')
+#matplotlib.rcParams['pdf.fonttype'] = 42
+#matplotlib.rcParams['ps.fonttype'] = 42
+#matplotlib.rcParams['ps.usedistiller'] = 'xpdf'
+#matplotlib.use('PS')
 
 def get_detection_metric_data(filename,visible_threshold=1):
     
@@ -648,12 +648,13 @@ def summarise_csv_data_litters(resultsPath,resultCategory,visible_threshold=1):
             if summaryDF is None:
                 summaryDF = pd.DataFrame(index = pd.MultiIndex.from_product([[videoName],csvDF.index.values]),
                                        columns = pd.MultiIndex.from_product([[networkName],csvDF.columns.values]))
-                summaryDF.loc[videoName,networkName].update(csvDF)
+                summaryDF.loc[videoName,networkName] = csvDF.loc[summaryDF.index.get_level_values(1),summaryDF.columns.get_level_values(1)].values
+#                print(summaryDF.head())
             else:
                 newindex = pd.MultiIndex.from_product([[videoName],csvDF.index.values])
                 newcolumns = pd.MultiIndex.from_product([[networkName],csvDF.columns.values])
                 newDF = pd.DataFrame(index=newindex,columns=newcolumns)
-                newDF.loc[videoName,networkName].update(csvDF)
+                newDF.loc[videoName,networkName]= csvDF.loc[newDF.index.get_level_values(1),newDF.columns.get_level_values(1)].values
                 if videoName in summaryDF.index.get_level_values(0):
                     summaryDF = summaryDF.reindex(columns = summaryDF.columns.union(newcolumns))
 #                    summaryDF = pd.concat([summaryDF,newDF],axis=1,join='inner')
@@ -664,7 +665,7 @@ def summarise_csv_data_litters(resultsPath,resultCategory,visible_threshold=1):
 #                    summaryDF = summaryDF.append(newDF)
                     
 #                summaryDF
-
+#    print(summaryDF)
     return summaryDF
             
 def close2frame_border_mask(fwidth,fheight,edgewidth,horizon):
@@ -1049,7 +1050,7 @@ def analyse_litters_summary_data(resultPath,summaryPath,visible_threshold=1,na_f
         #networks = ['mobilenetSSD-10000-th0p5-nms0p0-iSz124','mobilenetSSD-10000-th0p5-nms0p0-iSz220','yolov3-tiny-litter_10000-th0p0-nms0p0-iSz128','yolov3-tiny-litter_10000-th0p0-nms0p0-iSz224']
         summaryDF = None #resample_and_summarize('../data/model_data/','../data/simplified_data',networks)
 #        summaryDF = summarize_simplified_data(resultPath)
-#        summaryDF = summarise_csv_data_litters(resultPath,resultCategory,visible_threshold)
+        summaryDF = summarise_csv_data_litters(resultPath,resultCategory,visible_threshold)
         if summaryDF is None:
             summaryDF = pd.read_csv(f'{summaryPath}/{resultCategory}_metrics_data.csv',index_col=[0,1],header=[0,1])
 #            return summaryDF
@@ -1101,7 +1102,7 @@ def analyse_litters_summary_data(resultPath,summaryPath,visible_threshold=1,na_f
             u2s_breakdown = metrics_data_breakdown(u2s_breakdown,col,'P_u2s',summaryCol)
             
         #save analysis data
-        tex_df.to_latex(f'{summaryPath}/{resultCategory}_metrics_data_nafilter_{na_filter}.tex',escape=False)
+        tex_df[['mSSD124-50fps','mSSD220-50fps','mSSD124-Pi4','mSSD220-Pi4','mSSD124-Pi3','mSSD220-Pi3']].to_latex(f'{summaryPath}/{resultCategory}_metrics_data_nafilter_{na_filter}.tex',escape=False)
         
         means_df.to_csv(f'{summaryPath}/{resultCategory}_probability_means_nafilter_{na_filter}.csv')
         stddev_df.to_csv(f'{summaryPath}/{resultCategory}_probability_stddev_nafilter_{na_filter}.csv')
@@ -1141,22 +1142,25 @@ def generate_plot_for_visibleData(summary_analysis):
 
         
 if __name__ == '__main__':
-    resultPath = '../data/model_data/'
-    videosPath = '../data/mp4/'
-    summary_analysis = '../data/summary_analysis/'
-    fname = '../data/model_data/20190111GOPR9027/mobilenetSSD-10000-th0p5-nms0p0-iSz220/20190111GOPR9027-mobilenetSSD-10000-th0p5-nms0p0-iSz220-detection-TPandFN.csv'
-#    s2s_duration,uns2uns_duration = process_consecutive_occurrences(resultPath)
-#    s2s_duration = update_duration_columns(s2s_duration)
-#    uns2uns_duration = update_duration_columns(uns2uns_duration)
-#    process_s2s_uns2uns_data(resultPath,summary_analysis)
-#    firstAppearanceDF = first_appearance(resultPath)
-#    dataDict = bbox_heatdata(resultPath,summary_analysis,centre=False)
-    
-#    TPandFN = summarise_csv_data(resultPath,resultCategory = 'TPandFN')
-    
-#    TPandFN.to_csv(summary_analysis + 'TPandFN.csv')
-    experiments = '../data/summary_analysis'
-    comp_model = '../data/computational_simulation/comp-sim-100k'
+#    resultPath = '../data/model_data/'
+#    videosPath = '../data/mp4/'
+#    summary_analysis = '../data/summary_analysis/'
+#    fname = '../data/model_data/20190111GOPR9027/mobilenetSSD-10000-th0p5-nms0p0-iSz220/20190111GOPR9027-mobilenetSSD-10000-th0p5-nms0p0-iSz220-detection-TPandFN.csv'
+##    s2s_duration,uns2uns_duration = process_consecutive_occurrences(resultPath)
+##    s2s_duration = update_duration_columns(s2s_duration)
+##    uns2uns_duration = update_duration_columns(uns2uns_duration)
+##    process_s2s_uns2uns_data(resultPath,summary_analysis)
+##    firstAppearanceDF = first_appearance(resultPath)
+##    dataDict = bbox_heatdata(resultPath,summary_analysis,centre=False)
+#    
+##    TPandFN = summarise_csv_data(resultPath,resultCategory = 'TPandFN')
+#    
+##    TPandFN.to_csv(summary_analysis + 'TPandFN.csv')
+#    experiments = '../data/summary_analysis'
+#    comp_model = '../data/computational_simulation/comp-sim-100k'
 #    compare_fine_grain(experiments,comp_model,'../data/summary_analysis')
 #    generate_plot_for_visibleData(experiments + '/')
+    analyse_litters_summary_data('../data/computational_simulation/v2litters-comp-sim-mean-1000tsteps-100litter/v2litters-comp-sim-mean-1000tsteps-100litter/',
+                                 '../data/computational_simulation/v2litters-comp-sim-mean-1000tsteps-100litter/v2litters-comp-sim-mean-1000tsteps-100litter',
+                                 )
     
